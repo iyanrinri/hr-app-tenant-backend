@@ -1,0 +1,133 @@
+// Prisma schema for Employees Database
+// Database: PostgreSQL (per tenant)
+
+datasource db {
+  provider = "postgresql"
+}
+
+// Enums
+enum Role {
+  ADMIN
+  HR
+  MANAGER
+  EMPLOYEE
+}
+
+enum AttendanceStatus {
+  PRESENT
+  ABSENT
+  LATE
+  EXCUSED
+}
+
+enum AttendanceType {
+  CLOCK_IN
+  CLOCK_OUT
+}
+
+enum LeaveStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+// User model for employee account
+model User {
+  id        BigInt   @id @default(autoincrement())
+  email     String   @unique
+  password  String
+  firstName String
+  lastName  String
+  role      Role     @default(EMPLOYEE)
+  isActive  Boolean  @default(false)
+  deletedAt DateTime?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  employee  Employee?
+  attendances Attendance[]
+  leaves    Leave[]
+
+  @@index([email])
+  @@index([role])
+  @@index([deletedAt])
+  @@map("users")
+}
+
+// Employee model
+model Employee {
+  id        BigInt   @id @default(autoincrement())
+  userId    BigInt   @unique
+  firstName String
+  lastName  String
+  position  String
+  department String
+  joinDate  DateTime
+  isActive  Boolean  @default(false)
+  deletedAt DateTime?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  user      User     @relation(fields: [userId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  attendances Attendance[]
+  leaves    Leave[]
+
+  @@index([userId])
+  @@index([firstName])
+  @@index([lastName])
+  @@index([position])
+  @@index([department])
+  @@index([deletedAt])
+  @@map("employees")
+}
+
+// Attendance model
+model Attendance {
+  id        BigInt   @id @default(autoincrement())
+  userId    BigInt
+  employeeId BigInt
+  type      AttendanceType
+  status    AttendanceStatus
+  clockInTime DateTime?
+  clockOutTime DateTime?
+  date      DateTime
+  notes     String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  user      User     @relation(fields: [userId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  employee  Employee @relation(fields: [employeeId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+
+  @@index([userId])
+  @@index([employeeId])
+  @@index([date])
+  @@map("attendances")
+}
+
+// Leave model
+model Leave {
+  id        BigInt   @id @default(autoincrement())
+  userId    BigInt
+  employeeId BigInt
+  leaveType String   // e.g., 'SICK', 'VACATION', 'PERSONAL'
+  startDate DateTime
+  endDate   DateTime
+  reason    String?
+  status    LeaveStatus @default(PENDING)
+  approvedBy BigInt?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  user      User     @relation(fields: [userId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  employee  Employee @relation(fields: [employeeId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+
+  @@index([userId])
+  @@index([employeeId])
+  @@index([status])
+  @@index([startDate])
+  @@map("leaves")
+}

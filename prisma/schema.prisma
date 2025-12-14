@@ -1,0 +1,125 @@
+// Prisma schema for HR App Tenants Backend - MASTER DATABASE ONLY
+// This schema is for the master database (hr_app_db)
+// Employee database schemas are initialized dynamically via SQL
+
+generator client {
+  provider = "prisma-client-js"
+  output   = "../node_modules/.prisma/client"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// Tenant model - represents an organization/company
+model Tenant {
+  id        String   @id @default(cuid())
+  name      String
+  slug      String   @unique
+  email     String   @unique
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  users User[]
+
+  @@map("tenants")
+}
+
+// User model - represents a tenant user
+model User {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  password  String   // bcrypt hashed password
+  firstName String
+  lastName  String
+  role      Role     @default(EMPLOYEE)
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Foreign key
+  tenantId  String
+  tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@map("users")
+}
+
+// Role enum for users
+enum Role {
+  ADMIN
+  HR
+  MANAGER
+  EMPLOYEE
+}
+
+// Employee model - used in tenant databases
+model Employee {
+  id        BigInt    @id @default(autoincrement())
+  userId    BigInt?   @unique(map: "employees_userId_unique")
+  managerId BigInt?   // Self-referential for hierarchy
+  
+  // Basic Information
+  firstName String
+  lastName  String
+  position  String
+  department String
+  joinDate  DateTime
+  
+  // Personal Information
+  employeeNumber    String?   @unique(map: "employees_employeeNumber_unique")
+  dateOfBirth       DateTime?
+  gender            String?   // M, F, Other
+  maritalStatus     String?   // Single, Married, Divorced, Widowed
+  nationality       String?
+  religion          String?
+  bloodType         String?
+  idNumber          String?   @unique(map: "employees_idNumber_unique")
+  taxNumber         String?   @unique(map: "employees_taxNumber_unique")
+  
+  // Contact Information
+  phoneNumber           String?
+  alternativePhone      String?
+  address               String?
+  city                  String?
+  province              String?
+  postalCode            String?
+  emergencyContactName  String?
+  emergencyContactPhone String?
+  emergencyContactRelation String?
+  
+  // Bank Information
+  bankName          String?
+  bankAccountNumber String?
+  bankAccountName   String?
+  
+  // Employment Details
+  employmentStatus  String?   // Permanent, Contract, Temporary, etc
+  contractStartDate DateTime?
+  contractEndDate   DateTime?
+  workLocation      String?
+  baseSalary        Float?
+  
+  // Profile
+  profilePicture    String?
+  
+  // Status & Audit
+  isActive  Boolean   @default(true)
+  deletedAt DateTime?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  
+  // Self-referential relations for hierarchy
+  manager       Employee?   @relation("ManagerSubordinates", fields: [managerId], references: [id])
+  subordinates  Employee[]  @relation("ManagerSubordinates")
+
+  @@index([firstName])
+  @@index([lastName])
+  @@index([position])
+  @@index([department])
+  @@index([managerId])
+  @@index([isActive])
+  @@index([deletedAt])
+  @@map("employees")
+}

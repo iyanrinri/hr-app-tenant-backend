@@ -1,0 +1,65 @@
+// Prisma schema for Employee Database (per tenant)
+// This schema is used to generate PrismaClient for tenant-specific databases
+// Database name format: {tenant_slug}_erp
+
+generator client {
+  provider = "prisma-client-js"
+  output   = "../node_modules/.prisma/employee"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// Employee User model for employee accounts
+model EmployeeUser {
+  id        BigInt   @id @default(autoincrement())
+  email     String   @unique
+  password  String
+  firstName String
+  lastName  String
+  role      EmployeeRole @default(EMPLOYEE)
+  isActive  Boolean  @default(false)
+  deletedAt DateTime?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  employee  Employee?
+
+  @@index([email])
+  @@map("users")
+}
+
+// Employee model for employee records
+model Employee {
+  id        BigInt   @id @default(autoincrement())
+  userId    BigInt   @unique
+  firstName String
+  lastName  String
+  position  String
+  department String
+  joinDate  DateTime
+  isActive  Boolean  @default(false)
+  deletedAt DateTime?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  employeeUser      EmployeeUser @relation(fields: [userId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+
+  @@index([firstName])
+  @@index([lastName])
+  @@index([position])
+  @@index([department])
+  @@index([isActive])
+  @@index([deletedAt])
+  @@map("employees")
+}
+
+enum EmployeeRole {
+  ADMIN
+  HR
+  MANAGER
+  EMPLOYEE
+}
