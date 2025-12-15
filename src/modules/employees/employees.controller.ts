@@ -8,9 +8,13 @@ import {
   Body,
   Param,
   Query,
+  Request,
   UseGuards,
+  UseInterceptors,
+  UploadedFile,
   HttpCode,
   HttpStatus,
+  NotFoundException,
 } from '@nestjs/common';
 import {
   ApiTags,
@@ -18,19 +22,26 @@ import {
   ApiResponse,
   ApiBearerAuth,
   ApiQuery,
+  ApiConsumes,
+  ApiBody,
 } from '@nestjs/swagger';
+import { FileInterceptor } from '@nestjs/platform-express';
 import { EmployeesService } from './employees.service';
 import {
   CreateEmployeeDto,
   UpdateEmployeeDto,
   FindAllEmployeesDto,
   SetManagerDto,
+  UpdateEmployeeProfileDto,
 } from './dto';
 import { JwtAuthGuard } from '../../common/guards';
+import { Roles } from '../../common/decorators';
+import { RolesGuard } from '../../common/guards/roles.guard';
+import { multerConfig } from '../../common/config/multer.config';
 
 @ApiTags('Employees')
 @Controller(':tenant_slug/employees')
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, RolesGuard)
 @ApiBearerAuth()
 export class EmployeesController {
   constructor(private employeesService: EmployeesService) {}
@@ -242,6 +253,7 @@ export class EmployeesController {
   }
 
   @Get(':id/management-chain')
+  @Roles('SUPER', 'HR', 'MANAGER', 'EMPLOYEE')
   @ApiOperation({
     summary: 'Get management chain',
     description: 'Retrieves the chain of command up to the top (manager -> manager\'s manager -> etc)',
@@ -255,5 +267,166 @@ export class EmployeesController {
     @Param('id') employeeId: string,
   ) {
     return this.employeesService.getManagementChain(tenantSlug, employeeId);
+  }
+
+  // Current User Profile Endpoints
+  @Get('profile/me')
+  @Roles('SUPER', 'HR', 'MANAGER', 'EMPLOYEE')
+  @ApiOperation({
+    summary: 'Get my employee profile',
+    description: 'Retrieves the authenticated user\'s employee profile',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Employee profile retrieved successfully',
+  })
+  @ApiResponse({
+    status: 404,
+    description: 'Employee profile not found for this user',
+  })
+  async getMyProfile(
+    @Param('tenant_slug') tenantSlug: string,
+    @Request() req: any,
+  ) {
+    const employee = await this.employeesService.findByUserId(
+      tenantSlug,
+      BigInt(req.user.id),
+    );
+    if (!employee) {
+      throw new NotFoundException('Employee profile not found for this user');
+    }
+    return this.employeesService.getProfile(tenantSlug, Number(employee.id));
+  }
+
+  @Patch('profile/me')
+  @Roles('SUPER', 'HR', 'MANAGER', 'EMPLOYEE')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Update my employee profile',
+    description: 'Updates the authenticated user\'s employee profile',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Employee profile updated successfully',
+  })
+  @ApiResponse({
+    status: 404,
+    description: 'Employee profile not found for this user',
+  })
+  @ApiBody({
+    type: UpdateEmployeeProfileDto,
+    description: 'Profile data to update',
+  })
+  async updateMyProfile(
+    @Param('tenant_slug') tenantSlug: string,
+    @Request() req: any,
+    @Body() updateEmployeeProfileDto: UpdateEmployeeProfileDto,
+  ) {
+    const employee = await this.employeesService.findByUserId(
+      tenantSlug,
+      BigInt(req.user.id),
+    );
+    if (!employee) {
+      throw new NotFoundException('Employee profile not found for this user');
+    }
+    return this.employeesService.updateProfile(
+      tenantSlug,
+      Number(employee.id),
+      updateEmployeeProfileDto,
+    );
+  }
+
+  @Get(':id/profile')
+  @Roles('SUPER', 'HR', 'MANAGER', 'EMPLOYEE')
+  @ApiOperation({
+    summary: 'Get employee profile',
+    description: 'Retrieves complete employee profile with all details',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Employee profile with all details',
+  })
+  async getProfile(
+    @Param('tenant_slug') tenantSlug: string,
+    @Param('id') employeeId: string,
+  ) {
+    return this.employeesService.getProfile(tenantSlug, Number(employeeId));
+  }
+
+  @Patch(':id/profile')
+  @Roles('SUPER', 'HR', 'MANAGER', 'EMPLOYEE')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Update employee profile',
+    description: 'Updates employee profile with provided data',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Employee profile updated successfully',
+  })
+  @ApiBody({
+    type: UpdateEmployeeProfileDto,
+    description: 'Profile data to update',
+  })
+  async updateProfile(
+    @Param('tenant_slug') tenantSlug: string,
+    @Param('id') employeeId: string,
+    @Body() updateData: UpdateEmployeeProfileDto,
+  ) {
+    return this.employeesService.updateProfile(tenantSlug, Number(employeeId), updateData);
+  }
+
+  @Post(':id/picture')
+  @Roles('SUPER', 'HR', 'EMPLOYEE')
+  @HttpCode(HttpStatus.CREATED)
+  @UseInterceptors(FileInterceptor('file', multerConfig))
+  @ApiOperation({
+    summary: 'Upload profile picture',
+    description: 'Uploads a new profile picture for employee',
+  })
+  @ApiResponse({
+    status: 201,
+    description: 'Profile picture uploaded successfully',
+  })
+  @ApiConsumes('multipart/form-data')
+  @ApiBody({
+    schema: {
+      type: 'object',
+      properties: {
+        file: {
+          type: 'string',
+          format: 'binary',
+          description: 'Image file (JPEG, PNG, GIF, WebP, max 5MB)',
+        },
+      },
+    },
+  })
+  async uploadProfilePicture(
+    @Param('tenant_slug') tenantSlug: string,
+    @Param('id') employeeId: string,
+    @UploadedFile() file: Express.Multer.File,
+  ) {
+    if (!file) {
+      throw new Error('No file uploaded');
+    }
+    return this.employeesService.uploadProfilePicture(tenantSlug, Number(employeeId), file.filename);
+  }
+
+  @Delete(':id/picture')
+  @Roles('SUPER', 'HR', 'EMPLOYEE')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Delete profile picture',
+    description: 'Deletes the profile picture for employee',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Profile picture deleted successfully',
+  })
+  async deleteProfilePicture(
+    @Param('tenant_slug') tenantSlug: string,
+    @Param('id') employeeId: string,
+  ) {
+    return this.employeesService.deleteProfilePicture(tenantSlug, Number(employeeId));
   }
 }

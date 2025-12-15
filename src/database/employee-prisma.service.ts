@@ -20,7 +20,7 @@ export class EmployeePrismaService {
 
   private buildDatabaseUrl(tenantSlug: string): string {
     const newUrl = new URL(process.env.DATABASE_URL!);
-    newUrl.pathname = `/${tenantSlug}_erp`;
+    newUrl.pathname = `/${tenantSlug.trim()}_erp`;
     return newUrl.toString();
   }
 

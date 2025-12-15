@@ -1,0 +1,26 @@
+-- AddColumn to employees table for employee profile details
+ALTER TABLE "employees" ADD COLUMN "phoneNumber" TEXT;
+ALTER TABLE "employees" ADD COLUMN "alternativePhone" TEXT;
+ALTER TABLE "employees" ADD COLUMN "address" TEXT;
+ALTER TABLE "employees" ADD COLUMN "city" TEXT;
+ALTER TABLE "employees" ADD COLUMN "province" TEXT;
+ALTER TABLE "employees" ADD COLUMN "postalCode" TEXT;
+ALTER TABLE "employees" ADD COLUMN "dateOfBirth" TIMESTAMP(3);
+ALTER TABLE "employees" ADD COLUMN "gender" TEXT;
+ALTER TABLE "employees" ADD COLUMN "maritalStatus" TEXT;
+ALTER TABLE "employees" ADD COLUMN "nationality" TEXT;
+ALTER TABLE "employees" ADD COLUMN "religion" TEXT;
+ALTER TABLE "employees" ADD COLUMN "bloodType" TEXT;
+ALTER TABLE "employees" ADD COLUMN "idNumber" TEXT;
+ALTER TABLE "employees" ADD COLUMN "taxNumber" TEXT;
+ALTER TABLE "employees" ADD COLUMN "bankName" TEXT;
+ALTER TABLE "employees" ADD COLUMN "bankAccountNumber" TEXT;
+ALTER TABLE "employees" ADD COLUMN "bankAccountName" TEXT;
+ALTER TABLE "employees" ADD COLUMN "emergencyContactName" TEXT;
+ALTER TABLE "employees" ADD COLUMN "emergencyContactPhone" TEXT;
+ALTER TABLE "employees" ADD COLUMN "emergencyContactRelation" TEXT;
+ALTER TABLE "employees" ADD COLUMN "employeeNumber" TEXT;
+ALTER TABLE "employees" ADD COLUMN "contractStartDate" TIMESTAMP(3);
+ALTER TABLE "employees" ADD COLUMN "contractEndDate" TIMESTAMP(3);
+ALTER TABLE "employees" ADD COLUMN "workLocation" TEXT;
+ALTER TABLE "employees" ADD COLUMN "profilePictureUrl" TEXT;

@@ -178,6 +178,23 @@ export class EmployeesService {
   }
 
   /**
+   * Find employee by user ID
+   */
+  async findByUserId(tenantSlug: string, userId: bigint) {
+    const client = this.employeePrisma.getClient(tenantSlug);
+
+    const employees = await client.$queryRaw`
+      SELECT * FROM "employees" WHERE "userId" = ${userId} AND "deletedAt" IS NULL
+    `;
+
+    if (!employees || employees.length === 0) {
+      return null;
+    }
+
+    return employees[0];
+  }
+
+  /**
    * Update employee information
    */
   async updateEmployee(
@@ -374,23 +391,6 @@ export class EmployeesService {
   }
 
   /**
-   * Get employee by user ID
-   */
-  async findByUserId(tenantSlug: string, userId: number) {
-    const client = this.employeePrisma.getClient(tenantSlug);
-
-    const employees = await client.$queryRaw`
-      SELECT * FROM "employees" WHERE "userId" = ${userId} AND "deletedAt" IS NULL
-    `;
-
-    if (!employees || employees.length === 0) {
-      return null;
-    }
-
-    return this.formatProfileResponse(employees[0]);
-  }
-
-  /**
    * Get management chain (manager -> manager's manager -> etc)
    */
   async getManagementChain(tenantSlug: string, employeeId: string) {
@@ -516,5 +516,162 @@ export class EmployeesService {
       department: employee.department,
       subordinates: subordinateTrees,
     };
+  }
+
+  /**
+   * Get employee profile with all details
+   */
+  async getProfile(tenantSlug: string, employeeId: number) {
+    const client = this.employeePrisma.getClient(tenantSlug);
+
+    try {
+      const query = `SELECT * FROM "employees" WHERE id = ${employeeId} AND "deletedAt" IS NULL`;
+      const employees = await client.$queryRawUnsafe(query);
+
+      if (!employees || employees.length === 0) {
+        throw new NotFoundException(`Employee with ID ${employeeId} not found`);
+      }
+
+      return this.formatProfileResponse(employees[0]);
+    } catch (error) {
+      if (error instanceof NotFoundException) {
+        throw error;
+      }
+      if (error.code === 'P2010' && error.meta?.kind === 'DatabaseDoesNotExist') {
+        throw new NotFoundException('Your company/tenant is not exists');
+      }
+      throw new BadRequestException('Failed to fetch employee profile');
+    }
+  }
+
+  /**
+   * Update employee profile
+   */
+  async updateProfile(tenantSlug: string, employeeId: number, updateData: any) {
+    const client = this.employeePrisma.getClient(tenantSlug);
+
+    try {
+      // First verify employee exists
+      const checkQuery = `SELECT id FROM "employees" WHERE id = ${employeeId} AND "deletedAt" IS NULL`;
+      const employees = await client.$queryRawUnsafe(checkQuery);
+
+      if (!employees || employees.length === 0) {
+        throw new NotFoundException(`Employee with ID ${employeeId} not found`);
+      }
+
+      // Build the update query dynamically
+      const allowedFields = [
+        'firstName', 'lastName', 'employeeNumber', 'dateOfBirth', 'gender', 'maritalStatus',
+        'nationality', 'religion', 'bloodType', 'idNumber', 'taxNumber', 'phoneNumber',
+        'alternativePhone', 'address', 'city', 'province', 'postalCode',
+        'emergencyContactName', 'emergencyContactPhone', 'emergencyContactRelation',
+        'bankName', 'bankAccountNumber', 'bankAccountName', 'position', 'department',
+        'employmentStatus', 'contractStartDate', 'contractEndDate', 'workLocation', 'joinDate',
+      ];
+
+      const updates = Object.keys(updateData)
+        .filter(key => allowedFields.includes(key))
+        .filter(key => {
+          const value = updateData[key];
+          // Only include if value is not null, undefined, or empty string
+          return value !== null && value !== undefined && value !== '';
+        })
+        .map(key => {
+          const value = updateData[key];
+          const escapedValue = `'${value.toString().replace(/'/g, "''")}'`;
+          return `"${key}" = ${escapedValue}`;
+        });
+
+      if (updates.length === 0) {
+        return this.getProfile(tenantSlug, employeeId);
+      }
+
+      const updateQuery = `
+        UPDATE "employees" 
+        SET ${updates.join(', ')}, "updatedAt" = NOW() 
+        WHERE id = ${employeeId}
+      `;
+
+      await client.$queryRawUnsafe(updateQuery);
+      return this.getProfile(tenantSlug, employeeId);
+    } catch (error) {
+      if (error instanceof NotFoundException) {
+        throw error;
+      }
+      if (error.code === 'P2010' && error.meta?.kind === 'DatabaseDoesNotExist') {
+        throw new NotFoundException('Your company/tenant is not exists');
+      }
+      // Log the actual error for debugging
+      console.error('Profile update error:', error);
+      throw new BadRequestException(
+        error.message || 'Failed to update employee profile',
+      );
+    }
+  }
+
+  /**
+   * Upload profile picture
+   */
+  async uploadProfilePicture(tenantSlug: string, employeeId: number, filename: string) {
+    const client = this.employeePrisma.getClient(tenantSlug);
+
+    try {
+      // First verify employee exists
+      const checkQuery = `SELECT id FROM "employees" WHERE id = ${employeeId} AND "deletedAt" IS NULL`;
+      const employees = await client.$queryRawUnsafe(checkQuery);
+
+      if (!employees || employees.length === 0) {
+        throw new NotFoundException(`Employee with ID ${employeeId} not found`);
+      }
+
+      const fileUrl = `/uploads/profiles/${filename}`;
+      const updateQuery = `UPDATE "employees" SET "profilePicture" = '${fileUrl}', "updatedAt" = NOW() WHERE id = ${employeeId}`;
+
+      await client.$queryRawUnsafe(updateQuery);
+
+      return {
+        url: fileUrl,
+        filename: filename,
+        message: 'Profile picture uploaded successfully',
+      };
+    } catch (error) {
+      if (error instanceof NotFoundException) {
+        throw error;
+      }
+      if (error.code === 'P2010' && error.meta?.kind === 'DatabaseDoesNotExist') {
+        throw new NotFoundException('Your company/tenant is not exists');
+      }
+      throw new BadRequestException('Failed to upload profile picture');
+    }
+  }
+
+  /**
+   * Delete profile picture
+   */
+  async deleteProfilePicture(tenantSlug: string, employeeId: number) {
+    const client = this.employeePrisma.getClient(tenantSlug);
+
+    try {
+      // First verify employee exists
+      const checkQuery = `SELECT id, "profilePicture" FROM "employees" WHERE id = ${employeeId} AND "deletedAt" IS NULL`;
+      const employees = await client.$queryRawUnsafe(checkQuery);
+
+      if (!employees || employees.length === 0) {
+        throw new NotFoundException(`Employee with ID ${employeeId} not found`);
+      }
+
+      const updateQuery = `UPDATE "employees" SET "profilePicture" = NULL, "updatedAt" = NOW() WHERE id = ${employeeId}`;
+      await client.$queryRawUnsafe(updateQuery);
+
+      return { message: 'Profile picture deleted successfully' };
+    } catch (error) {
+      if (error instanceof NotFoundException) {
+        throw error;
+      }
+      if (error.code === 'P2010' && error.meta?.kind === 'DatabaseDoesNotExist') {
+        throw new NotFoundException('Your company/tenant is not exists');
+      }
+      throw new BadRequestException('Failed to delete profile picture');
+    }
   }
 }

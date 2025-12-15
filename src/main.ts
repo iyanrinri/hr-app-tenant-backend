@@ -2,12 +2,25 @@ import { NestFactory } from '@nestjs/core';
 import { ValidationPipe } from '@nestjs/common';
 import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
 import { AppModule } from './app.module';
+import { ValidationExceptionFilter } from './common/filters/validation-exception.filter';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
 
-  // Enable validation
-  app.useGlobalPipes(new ValidationPipe());
+  // Enable validation with detailed error messages
+  app.useGlobalPipes(
+    new ValidationPipe({
+      whitelist: true,
+      forbidNonWhitelisted: true,
+      transform: true,
+      transformOptions: {
+        enableImplicitConversion: true,
+      },
+    }),
+  );
+
+  // Register global exception filters
+  app.useGlobalFilters(new ValidationExceptionFilter());
 
   // Swagger configuration
   const config = new DocumentBuilder()

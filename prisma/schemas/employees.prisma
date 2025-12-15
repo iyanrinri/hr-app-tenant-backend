@@ -64,6 +64,31 @@ model Employee {
   position  String
   department String
   joinDate  DateTime
+  phoneNumber String?
+  alternativePhone String?
+  address String?
+  city String?
+  province String?
+  postalCode String?
+  dateOfBirth DateTime?
+  gender String?
+  maritalStatus String?
+  nationality String?
+  religion String?
+  bloodType String?
+  idNumber String?
+  taxNumber String?
+  bankName String?
+  bankAccountNumber String?
+  bankAccountName String?
+  emergencyContactName String?
+  emergencyContactPhone String?
+  emergencyContactRelation String?
+  employeeNumber String?
+  contractStartDate DateTime?
+  contractEndDate DateTime?
+  workLocation String?
+  profilePictureUrl String?
   isActive  Boolean  @default(false)
   deletedAt DateTime?
   createdAt DateTime @default(now())
