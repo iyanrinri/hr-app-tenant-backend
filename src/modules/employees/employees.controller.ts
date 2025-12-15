@@ -253,7 +253,7 @@ export class EmployeesController {
   }
 
   @Get(':id/management-chain')
-  @Roles('SUPER', 'HR', 'MANAGER', 'EMPLOYEE')
+  @Roles('ADMIN', 'SUPER', 'HR', 'MANAGER', 'EMPLOYEE')
   @ApiOperation({
     summary: 'Get management chain',
     description: 'Retrieves the chain of command up to the top (manager -> manager\'s manager -> etc)',
@@ -271,7 +271,7 @@ export class EmployeesController {
 
   // Current User Profile Endpoints
   @Get('profile/me')
-  @Roles('SUPER', 'HR', 'MANAGER', 'EMPLOYEE')
+  @Roles('ADMIN', 'SUPER', 'HR', 'MANAGER', 'EMPLOYEE')
   @ApiOperation({
     summary: 'Get my employee profile',
     description: 'Retrieves the authenticated user\'s employee profile',
@@ -299,7 +299,7 @@ export class EmployeesController {
   }
 
   @Patch('profile/me')
-  @Roles('SUPER', 'HR', 'MANAGER', 'EMPLOYEE')
+  @Roles('ADMIN', 'SUPER', 'HR', 'MANAGER', 'EMPLOYEE')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
     summary: 'Update my employee profile',
@@ -337,7 +337,7 @@ export class EmployeesController {
   }
 
   @Get(':id/profile')
-  @Roles('SUPER', 'HR', 'MANAGER', 'EMPLOYEE')
+  @Roles('ADMIN', 'SUPER', 'HR', 'MANAGER', 'EMPLOYEE')
   @ApiOperation({
     summary: 'Get employee profile',
     description: 'Retrieves complete employee profile with all details',
@@ -354,7 +354,7 @@ export class EmployeesController {
   }
 
   @Patch(':id/profile')
-  @Roles('SUPER', 'HR', 'MANAGER', 'EMPLOYEE')
+  @Roles('ADMIN', 'SUPER', 'HR', 'MANAGER', 'EMPLOYEE')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
     summary: 'Update employee profile',
@@ -377,7 +377,7 @@ export class EmployeesController {
   }
 
   @Post(':id/picture')
-  @Roles('SUPER', 'HR', 'EMPLOYEE')
+  @Roles('ADMIN', 'SUPER', 'HR', 'EMPLOYEE')
   @HttpCode(HttpStatus.CREATED)
   @UseInterceptors(FileInterceptor('file', multerConfig))
   @ApiOperation({
@@ -413,7 +413,7 @@ export class EmployeesController {
   }
 
   @Delete(':id/picture')
-  @Roles('SUPER', 'HR', 'EMPLOYEE')
+  @Roles('ADMIN', 'SUPER', 'HR', 'EMPLOYEE')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
     summary: 'Delete profile picture',

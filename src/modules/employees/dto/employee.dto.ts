@@ -596,6 +596,15 @@ export class AssignSubordinatesDto {
 // Query/Filter DTOs
 export class FindAllEmployeesDto {
   @ApiPropertyOptional({
+    description: 'Enable pagination (0 or 1)',
+    example: 1,
+  })
+  @IsNumber()
+  @IsOptional()
+  @Type(() => Number)
+  paginated?: number = 1;
+
+  @ApiPropertyOptional({
     description: 'Page number (1-based)',
     example: 1,
   })
@@ -675,6 +684,33 @@ export class FindAllEmployeesDto {
   sortOrder?: 'asc' | 'desc' = 'asc';
 }
 
+// User Profile DTO for association
+export class UserProfileDto {
+  @ApiProperty()
+  id: string;
+
+  @ApiProperty()
+  email: string;
+
+  @ApiProperty()
+  firstName: string;
+
+  @ApiProperty()
+  lastName: string;
+
+  @ApiProperty()
+  role: string;
+
+  @ApiProperty()
+  isActive: boolean;
+
+  @ApiProperty()
+  createdAt: Date;
+
+  @ApiProperty()
+  updatedAt: Date;
+}
+
 // Profile DTOs
 export class EmployeeProfileDto {
   @ApiProperty({
@@ -688,6 +724,12 @@ export class EmployeeProfileDto {
     example: '1',
   })
   userId: string | null;
+
+  @ApiProperty({
+    description: 'Associated user information',
+    type: () => UserProfileDto,
+  })
+  user?: UserProfileDto | null;
 
   // Basic Information
   @ApiProperty()
@@ -848,7 +890,7 @@ export class PaginatedEmployeeResponseDto {
   pages: number;
 }
 
-export class OrganizationTreeDto {
+export class OrganizationNodeDto {
   @ApiProperty()
   id: string;
 
@@ -861,9 +903,20 @@ export class OrganizationTreeDto {
   @ApiProperty()
   position: string;
 
-  @ApiProperty()
-  department: string;
+  @ApiProperty({ required: false })
+  department?: string;
+}
 
-  @ApiProperty({ type: [OrganizationTreeDto] })
-  subordinates: OrganizationTreeDto[];
+export class OrganizationTreeDto {
+  @ApiProperty({ type: OrganizationNodeDto, required: false })
+  manager?: OrganizationNodeDto;
+
+  @ApiProperty({ type: OrganizationNodeDto })
+  employee: OrganizationNodeDto;
+
+  @ApiProperty({ type: [OrganizationNodeDto], required: false })
+  siblings?: OrganizationNodeDto[];
+
+  @ApiProperty({ type: [OrganizationNodeDto] })
+  subordinates: OrganizationNodeDto[];
 }

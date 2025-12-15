@@ -110,39 +110,46 @@ export class EmployeesService {
     const validSortOrder = ['ASC', 'DESC'].includes(sortOrder.toUpperCase()) ? sortOrder.toUpperCase() : 'ASC';
 
     // Build WHERE clause using Prisma's queryRawUnsafe for the entire query
-    let whereClause = '"deletedAt" IS NULL';
+    let whereClause = 'e."deletedAt" IS NULL';
 
     if (search) {
-      whereClause += ` AND ("firstName" ILIKE '%${search}%' OR "lastName" ILIKE '%${search}%' OR "position" ILIKE '%${search}%' OR "department" ILIKE '%${search}%')`;
+      whereClause += ` AND (e."firstName" ILIKE '%${search}%' OR e."lastName" ILIKE '%${search}%' OR e."position" ILIKE '%${search}%' OR e."department" ILIKE '%${search}%')`;
     }
 
     if (department) {
-      whereClause += ` AND "department" = '${department}'`;
+      whereClause += ` AND e."department" = '${department}'`;
     }
 
     if (employmentStatus) {
-      whereClause += ` AND "employmentStatus" = '${employmentStatus}'`;
+      whereClause += ` AND e."employmentStatus" = '${employmentStatus}'`;
     }
 
     if (isActive !== undefined) {
-      whereClause += ` AND "isActive" = ${isActive ? 'true' : 'false'}`;
+      whereClause += ` AND e."isActive" = ${isActive ? 'true' : 'false'}`;
     }
 
     if (managerId) {
-      whereClause += ` AND "managerId" = ${managerId}`;
+      whereClause += ` AND e."managerId" = ${managerId}`;
     }
 
     try {
       // Get total count
-      const countQuery = `SELECT COUNT(*) as count FROM "employees" WHERE ${whereClause}`;
+      const countQuery = `SELECT COUNT(*) as count FROM "employees" e WHERE ${whereClause}`;
       const countResult = await client.$queryRawUnsafe(countQuery);
       const total = parseInt(countResult[0].count.toString());
 
-      // Get employees with sorting and pagination
-      const query = `SELECT * FROM "employees" WHERE ${whereClause} ORDER BY "${sortField}" ${validSortOrder} LIMIT ${limit} OFFSET ${offset}`;
+      // Get employees with sorting and pagination, joined with users table
+      const query = `
+        SELECT e.*, u.id as user_id, u.email, u.role, u."isActive" as user_is_active, u."createdAt" as user_created_at, u."updatedAt" as user_updated_at
+        FROM "employees" e
+        LEFT JOIN "users" u ON e."userId" = u.id
+        WHERE ${whereClause} 
+        ORDER BY e."${sortField}" ${validSortOrder} 
+        LIMIT ${limit} OFFSET ${offset}
+      `;
       const employees = await client.$queryRawUnsafe(query);
 
-      const data = employees.map((emp: any) => this.formatProfileResponse(emp));
+      const data = employees.map((emp: any) => this.formatProfileResponse(emp, emp.user_id));
       const pages = Math.ceil(total / limit);
 
       return {
@@ -166,15 +173,19 @@ export class EmployeesService {
   ): Promise<EmployeeProfileDto> {
     const client = this.employeePrisma.getClient(tenantSlug);
 
-    const employees = await client.$queryRaw`
-      SELECT * FROM "employees" WHERE id = ${Number(employeeId)} AND "deletedAt" IS NULL
+    const query = `
+      SELECT e.*, u.id as user_id, u.email, u.role, u."isActive" as user_is_active, u."createdAt" as user_created_at, u."updatedAt" as user_updated_at
+      FROM "employees" e
+      LEFT JOIN "users" u ON e."userId" = u.id
+      WHERE e.id = ${Number(employeeId)} AND e."deletedAt" IS NULL
     `;
+    const employees = await client.$queryRawUnsafe(query);
 
     if (!employees || employees.length === 0) {
       throw new NotFoundException('Employee not found');
     }
 
-    return this.formatProfileResponse(employees[0]);
+    return this.formatProfileResponse(employees[0], employees[0].user_id);
   }
 
   /**
@@ -387,7 +398,83 @@ export class EmployeesService {
     }
 
     const employee = employees[0];
-    return this.buildOrganizationTree(client, employee);
+    
+    // Get manager
+    let manager: any = null;
+    if (employee.managerId) {
+      const managerData = await client.$queryRaw`
+        SELECT id, "firstName", "lastName", position, department FROM "employees" 
+        WHERE id = ${employee.managerId} AND "deletedAt" IS NULL
+      `;
+      manager = managerData?.[0] || null;
+    }
+
+    // Get siblings (employees with same manager, excluding current employee)
+    let siblings: any[] = [];
+    if (employee.managerId) {
+      siblings = await client.$queryRaw`
+        SELECT id, "firstName", "lastName", position, department FROM "employees" 
+        WHERE "managerId" = ${employee.managerId} AND id != ${employee.id} AND "deletedAt" IS NULL
+        ORDER BY "firstName" ASC
+      `;
+    }
+
+    // Get subordinates recursively
+    const subordinates = await this.getSubordinatesRecursive(client, employee.id);
+
+    return {
+      manager: manager ? {
+        id: manager.id.toString(),
+        firstName: manager.firstName,
+        lastName: manager.lastName,
+        position: manager.position,
+        department: manager.department,
+      } : undefined,
+      employee: {
+        id: employee.id.toString(),
+        firstName: employee.firstName,
+        lastName: employee.lastName,
+        position: employee.position,
+        department: employee.department,
+      },
+      siblings: siblings.length > 0 ? siblings.map((s: any) => ({
+        id: s.id.toString(),
+        firstName: s.firstName,
+        lastName: s.lastName,
+        position: s.position,
+        department: s.department,
+      })) : undefined,
+      subordinates: subordinates,
+    };
+  }
+
+  /**
+   * Get all subordinates recursively
+   */
+  private async getSubordinatesRecursive(client: any, employeeId: number): Promise<any[]> {
+    const directSubordinates = await client.$queryRaw`
+      SELECT id, "firstName", "lastName", position, department FROM "employees" 
+      WHERE "managerId" = ${employeeId} AND "deletedAt" IS NULL 
+      ORDER BY "firstName" ASC
+    `;
+
+    const allSubordinates: any[] = [];
+
+    for (const subordinate of directSubordinates) {
+      allSubordinates.push({
+        id: subordinate.id.toString(),
+        firstName: subordinate.firstName,
+        lastName: subordinate.lastName,
+        position: subordinate.position,
+        department: subordinate.department,
+      });
+
+      // Recursively get subordinates of this subordinate
+      const nestedSubordinates = await this.getSubordinatesRecursive(client, subordinate.id);
+      allSubordinates.push(...nestedSubordinates);
+    }
+
+    return allSubordinates;
   }
 
   /**
@@ -418,10 +505,22 @@ export class EmployeesService {
   /**
    * Helper: Format employee response with profile data
    */
-  private formatProfileResponse(employee: any): EmployeeProfileDto {
+  private formatProfileResponse(employee: any, userId?: any): EmployeeProfileDto {
+    const userData = userId ? {
+      id: userId?.toString(),
+      email: employee.email,
+      firstName: employee.firstName,
+      lastName: employee.lastName,
+      role: employee.role,
+      isActive: employee.user_is_active,
+      createdAt: new Date(employee.user_created_at),
+      updatedAt: new Date(employee.user_updated_at),
+    } : null;
+
     return {
       id: employee.id?.toString(),
       userId: employee.userId?.toString() || null,
+      user: userData,
       firstName: employee.firstName,
       lastName: employee.lastName,
       position: employee.position,
@@ -454,7 +553,7 @@ export class EmployeesService {
       workLocation: employee.workLocation,
       baseSalary: employee.baseSalary ? Number(employee.baseSalary) : null,
       profilePicture: employee.profilePicture,
-      managerId: employee.managerId,
+      managerId: employee.managerId ? Number(employee.managerId) : null,
       isActive: employee.isActive,
       deletedAt: employee.deletedAt ? new Date(employee.deletedAt) : null,
       createdAt: new Date(employee.createdAt),
@@ -492,47 +591,25 @@ export class EmployeesService {
   }
 
   /**
-   * Helper: Build organization tree recursively
-   */
-  private async buildOrganizationTree(
-    client: any,
-    employee: any,
-  ): Promise<OrganizationTreeDto> {
-    const subordinates = await client.$queryRaw`
-      SELECT * FROM "employees" WHERE "managerId" = ${employee.id} AND "deletedAt" IS NULL ORDER BY "firstName" ASC
-    `;
-
-    const subordinateTrees: OrganizationTreeDto[] = [];
-
-    for (const subordinate of subordinates) {
-      subordinateTrees.push(await this.buildOrganizationTree(client, subordinate));
-    }
-
-    return {
-      id: employee.id.toString(),
-      firstName: employee.firstName,
-      lastName: employee.lastName,
-      position: employee.position,
-      department: employee.department,
-      subordinates: subordinateTrees,
-    };
-  }
-
-  /**
    * Get employee profile with all details
    */
   async getProfile(tenantSlug: string, employeeId: number) {
     const client = this.employeePrisma.getClient(tenantSlug);
 
     try {
-      const query = `SELECT * FROM "employees" WHERE id = ${employeeId} AND "deletedAt" IS NULL`;
+      const query = `
+        SELECT e.*, u.id as user_id, u.email, u.role, u."isActive" as user_is_active, u."createdAt" as user_created_at, u."updatedAt" as user_updated_at
+        FROM "employees" e
+        LEFT JOIN "users" u ON e."userId" = u.id
+        WHERE e.id = ${employeeId} AND e."deletedAt" IS NULL
+      `;
       const employees = await client.$queryRawUnsafe(query);
 
       if (!employees || employees.length === 0) {
         throw new NotFoundException(`Employee with ID ${employeeId} not found`);
       }
 
-      return this.formatProfileResponse(employees[0]);
+      return this.formatProfileResponse(employees[0], employees[0].user_id);
     } catch (error) {
       if (error instanceof NotFoundException) {
         throw error;
