@@ -838,6 +838,9 @@ export class EmployeeProfileDto {
   @ApiPropertyOptional()
   baseSalary?: number | null;
 
+  @ApiPropertyOptional()
+  allowances?: number | null;
+
   // Profile
   @ApiPropertyOptional()
   profilePicture?: string | null;

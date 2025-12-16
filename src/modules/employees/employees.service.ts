@@ -170,11 +170,13 @@ export class EmployeesService {
       const countResult = await client.$queryRawUnsafe(countQuery);
       const total = parseInt(countResult[0].count.toString());
 
-      // Get employees with sorting and pagination, joined with users table
+      // Get employees with sorting and pagination, joined with users and current salary
       const query = `
-        SELECT e.*, u.id as user_id, u.email, u.role, u."isActive" as user_is_active, u."createdAt" as user_created_at, u."updatedAt" as user_updated_at
+        SELECT e.*, u.id as user_id, u.email, u.role, u."isActive" as user_is_active, u."createdAt" as user_created_at, u."updatedAt" as user_updated_at,
+               s."baseSalary" as salary_base, s.allowances as salary_allowances
         FROM "employees" e
         LEFT JOIN "users" u ON e."userId" = u.id
+        LEFT JOIN "salaries" s ON e.id = s."employeeId" AND s."isActive" = true AND s."endDate" IS NULL
         WHERE ${whereClause} 
         ORDER BY e."${sortField}" ${validSortOrder} 
         LIMIT ${limit} OFFSET ${offset}
@@ -583,7 +585,8 @@ export class EmployeesService {
       contractStartDate: employee.contractStartDate ? new Date(employee.contractStartDate) : null,
       contractEndDate: employee.contractEndDate ? new Date(employee.contractEndDate) : null,
       workLocation: employee.workLocation,
-      baseSalary: employee.baseSalary ? Number(employee.baseSalary) : null,
+      baseSalary: employee.salary_base ? Number(employee.salary_base) : (employee.baseSalary ? Number(employee.baseSalary) : null),
+      allowances: employee.salary_allowances ? Number(employee.salary_allowances) : null,
       profilePicture: employee.profilePicture,
       managerId: employee.managerId ? Number(employee.managerId) : null,
       isActive: employee.isActive,
