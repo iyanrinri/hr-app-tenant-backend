@@ -302,6 +302,15 @@ export class CreateEmployeeDto {
   baseSalary?: number;
 
   @ApiPropertyOptional({
+    description: 'Allowances',
+    example: 5000000,
+  })
+  @IsNumber()
+  @IsOptional()
+  @Type(() => Number)
+  allowances?: number;
+
+  @ApiPropertyOptional({
     description: 'Manager ID (for hierarchy)',
     example: '1',
   })

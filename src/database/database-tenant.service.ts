@@ -91,6 +91,15 @@ export class DatabaseTenantService {
         END $$;
       `);
 
+      // Create SalaryChangeType enum
+      await tenantClient.query(`
+        DO $$ BEGIN
+          CREATE TYPE "SalaryChangeType" AS ENUM ('INITIAL', 'PROMOTION', 'GRADE_ADJUSTMENT', 'PERFORMANCE_INCREASE', 'MARKET_ADJUSTMENT', 'DEPARTMENT_TRANSFER', 'POSITION_CHANGE', 'ANNUAL_INCREMENT');
+        EXCEPTION
+          WHEN duplicate_object THEN null;
+        END $$;
+      `);
+
       // Create users table
       await tenantClient.query(`
         CREATE TABLE IF NOT EXISTS "users" (
@@ -216,6 +225,71 @@ export class DatabaseTenantService {
         EXCEPTION
           WHEN duplicate_object THEN null;
         END $$;
+      `);
+
+      // Create salaries table
+      await tenantClient.query(`
+        CREATE TABLE IF NOT EXISTS "salaries" (
+          "id" BIGSERIAL NOT NULL,
+          "employeeId" BIGINT NOT NULL,
+          "baseSalary" DECIMAL(15,2) NOT NULL,
+          allowances DECIMAL(15,2) DEFAULT 0,
+          grade VARCHAR(50),
+          "effectiveDate" DATE NOT NULL,
+          "endDate" DATE,
+          "isActive" BOOLEAN DEFAULT true,
+          notes TEXT,
+          "createdBy" BIGINT NOT NULL,
+          "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          CONSTRAINT "salaries_pkey" PRIMARY KEY ("id"),
+          CONSTRAINT "salaries_employeeId_fkey" FOREIGN KEY ("employeeId") REFERENCES "employees"("id") ON DELETE CASCADE
+        );
+      `);
+
+      // Create salary_histories table
+      await tenantClient.query(`
+        CREATE TABLE IF NOT EXISTS "salary_histories" (
+          "id" BIGSERIAL NOT NULL,
+          "employeeId" BIGINT NOT NULL,
+          "changeType" "SalaryChangeType" NOT NULL,
+          "oldBaseSalary" DECIMAL(15,2),
+          "newBaseSalary" DECIMAL(15,2) NOT NULL,
+          "oldGrade" VARCHAR(50),
+          "newGrade" VARCHAR(50),
+          "oldPosition" VARCHAR(255),
+          "newPosition" VARCHAR(255),
+          "oldDepartment" VARCHAR(255),
+          "newDepartment" VARCHAR(255),
+          reason TEXT NOT NULL,
+          "effectiveDate" DATE NOT NULL,
+          "approvedBy" BIGINT,
+          "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          CONSTRAINT "salary_histories_pkey" PRIMARY KEY ("id"),
+          CONSTRAINT "salary_histories_employeeId_fkey" FOREIGN KEY ("employeeId") REFERENCES "employees"("id") ON DELETE CASCADE
+        );
+      `);
+
+      // Create indexes for salaries
+      await tenantClient.query(`
+        CREATE INDEX IF NOT EXISTS "idx_salaries_employee_id" ON "salaries"("employeeId");
+      `);
+
+      await tenantClient.query(`
+        CREATE INDEX IF NOT EXISTS "idx_salaries_is_active" ON "salaries"("isActive");
+      `);
+
+      await tenantClient.query(`
+        CREATE INDEX IF NOT EXISTS "idx_salaries_effective_date" ON "salaries"("effectiveDate");
+      `);
+
+      // Create indexes for salary_histories
+      await tenantClient.query(`
+        CREATE INDEX IF NOT EXISTS "idx_salary_histories_employee_id" ON "salary_histories"("employeeId");
+      `);
+
+      await tenantClient.query(`
+        CREATE INDEX IF NOT EXISTS "idx_salary_histories_change_type" ON "salary_histories"("changeType");
       `);
 
       // Seed initial user if seedData provided

@@ -24,13 +24,14 @@ export class EmployeesService {
   ) {}
 
   /**
-   * Create a new employee with auto-generated user account
+   * Create a new employee with auto-generated user account and initial salary
    */
   async createEmployee(
     tenantSlug: string,
     createEmployeeDto: CreateEmployeeDto,
   ) {
     const client = this.employeePrisma.getClient(tenantSlug);
+    const { baseSalary, allowances = 0, ...employeeData } = createEmployeeDto;
 
     // Check if user with this email already exists
     const existingUsersQuery = `SELECT * FROM "users" WHERE email = '${createEmployeeDto.email}'`;
@@ -76,7 +77,38 @@ export class EmployeesService {
       `;
       
       const employeeResult = await client.$queryRawUnsafe(employeeInsertQuery);
-      return this.formatProfileResponse(employeeResult[0]);
+      const employee = employeeResult[0];
+
+      // Create initial salary record if baseSalary is provided
+      if (baseSalary) {
+        const salaryEffectiveDate = new Date(createEmployeeDto.joinDate).toISOString().split('T')[0];
+        
+        const salaryInsertQuery = `
+          INSERT INTO "salaries" (
+            "employeeId", "baseSalary", allowances, "effectiveDate", "isActive", "createdBy", "createdAt", "updatedAt"
+          )
+          VALUES (
+            ${employee.id}, ${baseSalary}, ${allowances}, '${salaryEffectiveDate}', true, ${user.id}, NOW(), NOW()
+          )
+          RETURNING id
+        `;
+        
+        await client.$queryRawUnsafe(salaryInsertQuery);
+
+        // Create salary history record
+        const historyInsertQuery = `
+          INSERT INTO "salary_histories" (
+            "employeeId", "changeType", "newBaseSalary", reason, "effectiveDate", "approvedBy", "createdAt"
+          )
+          VALUES (
+            ${employee.id}, 'INITIAL', ${baseSalary}, 'Initial salary setup', '${salaryEffectiveDate}', ${user.id}, NOW()
+          )
+        `;
+        
+        await client.$queryRawUnsafe(historyInsertQuery);
+      }
+
+      return this.formatProfileResponse(employee);
     } catch (error) {
       throw new BadRequestException(
         `Failed to create employee: ${error.message}`,
