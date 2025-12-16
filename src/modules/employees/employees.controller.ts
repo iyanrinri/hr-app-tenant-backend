@@ -147,7 +147,7 @@ export class EmployeesController {
   @Put(':id')
   @ApiOperation({
     summary: 'Update employee information',
-    description: 'Updates employee profile information',
+    description: 'Updates employee profile information. Email can only be updated by HR/ADMIN/SUPER users.',
   })
   @ApiResponse({
     status: 200,
@@ -157,11 +157,38 @@ export class EmployeesController {
     @Param('tenant_slug') tenantSlug: string,
     @Param('id') employeeId: string,
     @Body() updateEmployeeDto: UpdateEmployeeDto,
+    @Request() req: any,
   ) {
     return this.employeesService.updateEmployee(
       tenantSlug,
       employeeId,
       updateEmployeeDto,
+      req.user?.id,
+      req.user?.role,
+    );
+  }
+
+  @Patch(':id')
+  @ApiOperation({
+    summary: 'Partially update employee information',
+    description: 'Partially updates employee profile information and creates salary history if salary changes. Email can only be updated by HR/ADMIN/SUPER users.',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Employee updated successfully',
+  })
+  async patchEmployee(
+    @Param('tenant_slug') tenantSlug: string,
+    @Param('id') employeeId: string,
+    @Body() updateEmployeeDto: UpdateEmployeeDto,
+    @Request() req: any,
+  ) {
+    return this.employeesService.updateEmployee(
+      tenantSlug,
+      employeeId,
+      updateEmployeeDto,
+      req.user?.id,
+      req.user?.role,
     );
   }
 

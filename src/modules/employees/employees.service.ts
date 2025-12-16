@@ -208,9 +208,11 @@ export class EmployeesService {
     const client = this.employeePrisma.getClient(tenantSlug);
 
     const query = `
-      SELECT e.*, u.id as user_id, u.email, u.role, u."isActive" as user_is_active, u."createdAt" as user_created_at, u."updatedAt" as user_updated_at
+      SELECT e.*, u.id as user_id, u.email, u.role, u."isActive" as user_is_active, u."createdAt" as user_created_at, u."updatedAt" as user_updated_at,
+             s."baseSalary" as salary_base, s.allowances as salary_allowances
       FROM "employees" e
       LEFT JOIN "users" u ON e."userId" = u.id
+      LEFT JOIN "salaries" s ON e.id = s."employeeId" AND s."isActive" = true AND s."endDate" IS NULL
       WHERE e.id = ${Number(employeeId)} AND e."deletedAt" IS NULL
     `;
     const employees = await client.$queryRawUnsafe(query);
@@ -241,13 +243,24 @@ export class EmployeesService {
 
   /**
    * Update employee information
+   * Handles salary changes by creating new salary records instead of updating employee table
    */
   async updateEmployee(
     tenantSlug: string,
     employeeId: string,
     updateEmployeeDto: UpdateEmployeeDto,
+    approvedBy?: number,
+    userRole?: string,
   ): Promise<EmployeeProfileDto> {
     const client = this.employeePrisma.getClient(tenantSlug);
+
+    // Check email update authorization
+    if (updateEmployeeDto.email !== undefined) {
+      const allowedRoles = ['HR', 'ADMIN', 'SUPER'];
+      if (!userRole || !allowedRoles.includes(userRole)) {
+        throw new BadRequestException('Only HR/ADMIN/SUPER users can update employee email');
+      }
+    }
 
     const employees = await client.$queryRaw`
       SELECT * FROM "employees" WHERE id = ${Number(employeeId)} AND "deletedAt" IS NULL
@@ -257,59 +270,113 @@ export class EmployeesService {
       throw new NotFoundException('Employee not found');
     }
 
-    const updates: string[] = [];
-    const params: any[] = [];
+    const employee = employees[0];
+    const setClause: string[] = [];
+    let hasSalaryChange = false;
+    let oldBaseSalary = null;
+    let newBaseSalary = null;
+    let newAllowances = null;
 
-    // Build dynamic update clause
+    // Get current salary for comparison
+    const currentSalaryResult = await client.$queryRaw`
+      SELECT * FROM "salaries" 
+      WHERE "employeeId" = ${Number(employeeId)} AND "isActive" = true AND "endDate" IS NULL
+      LIMIT 1
+    `;
+    const currentSalary = currentSalaryResult?.[0];
+
+    // Build dynamic update clause - exclude salary fields
     if (updateEmployeeDto.firstName !== undefined) {
-      updates.push('"firstName" = $' + (params.length + 1));
-      params.push(updateEmployeeDto.firstName);
+      setClause.push(`"firstName" = '${updateEmployeeDto.firstName}'`);
     }
     if (updateEmployeeDto.lastName !== undefined) {
-      updates.push('"lastName" = $' + (params.length + 1));
-      params.push(updateEmployeeDto.lastName);
+      setClause.push(`"lastName" = '${updateEmployeeDto.lastName}'`);
     }
     if (updateEmployeeDto.position !== undefined) {
-      updates.push('"position" = $' + (params.length + 1));
-      params.push(updateEmployeeDto.position);
+      setClause.push(`"position" = '${updateEmployeeDto.position}'`);
     }
     if (updateEmployeeDto.department !== undefined) {
-      updates.push('"department" = $' + (params.length + 1));
-      params.push(updateEmployeeDto.department);
+      setClause.push(`"department" = '${updateEmployeeDto.department}'`);
     }
     if (updateEmployeeDto.phoneNumber !== undefined) {
-      updates.push('"phoneNumber" = $' + (params.length + 1));
-      params.push(updateEmployeeDto.phoneNumber);
+      setClause.push(`"phoneNumber" = '${updateEmployeeDto.phoneNumber}'`);
     }
     if (updateEmployeeDto.address !== undefined) {
-      updates.push('"address" = $' + (params.length + 1));
-      params.push(updateEmployeeDto.address);
-    }
-    if (updateEmployeeDto.baseSalary !== undefined) {
-      updates.push('"baseSalary" = $' + (params.length + 1));
-      params.push(updateEmployeeDto.baseSalary);
+      setClause.push(`"address" = '${updateEmployeeDto.address}'`);
     }
     if (updateEmployeeDto.managerId !== undefined) {
-      updates.push('"managerId" = $' + (params.length + 1));
-      params.push(updateEmployeeDto.managerId || null);
+      setClause.push(`"managerId" = ${updateEmployeeDto.managerId || 'NULL'}`);
     }
     if (updateEmployeeDto.isActive !== undefined) {
-      updates.push('"isActive" = $' + (params.length + 1));
-      params.push(updateEmployeeDto.isActive);
+      setClause.push(`"isActive" = ${updateEmployeeDto.isActive ? 'true' : 'false'}`);
     }
 
-    updates.push('"updatedAt" = NOW()');
+    // Handle email updates - update both employee and user table
+    if (updateEmployeeDto.email !== undefined) {
+      // Check if new email is already in use
+      const existingUserQuery = `SELECT id FROM "users" WHERE email = '${updateEmployeeDto.email}' AND id != ${employee.userId}`;
+      const existingUsers = await client.$queryRawUnsafe(existingUserQuery);
+      if (existingUsers && existingUsers.length > 0) {
+        throw new BadRequestException('Email already in use by another user');
+      }
 
-    if (updates.length === 1) {
+      // Update user email
+      await client.$queryRawUnsafe(`UPDATE "users" SET email = '${updateEmployeeDto.email}', "updatedAt" = NOW() WHERE id = ${employee.userId}`);
+    }
+
+    // Handle salary changes separately
+    if (updateEmployeeDto.baseSalary !== undefined || updateEmployeeDto.allowances !== undefined) {
+      hasSalaryChange = true;
+      oldBaseSalary = currentSalary?.baseSalary || null;
+      newBaseSalary = updateEmployeeDto.baseSalary !== undefined ? updateEmployeeDto.baseSalary : oldBaseSalary;
+      newAllowances = updateEmployeeDto.allowances !== undefined ? updateEmployeeDto.allowances : (currentSalary?.allowances || 0);
+
+      // If there's an active salary, end it first
+      if (currentSalary) {
+        await client.$queryRawUnsafe(`
+          UPDATE "salaries" 
+          SET "endDate" = CURRENT_DATE, "isActive" = false, "updatedAt" = NOW()
+          WHERE id = ${currentSalary.id}
+        `);
+      }
+
+      // Create new salary record with effective date as today
+      const today = new Date().toISOString().split('T')[0];
+      const createdByValue = approvedBy ? approvedBy : 'NULL';
+      await client.$queryRawUnsafe(`
+        INSERT INTO "salaries" (
+          "employeeId", "baseSalary", allowances, "effectiveDate", "isActive", "createdBy", "createdAt", "updatedAt"
+        )
+        VALUES (
+          ${Number(employeeId)}, ${newBaseSalary}, ${newAllowances}, '${today}', true, ${createdByValue}, NOW(), NOW()
+        )
+      `);
+
+      // Create salary history record
+      const changeType = updateEmployeeDto.position !== undefined ? 'POSITION_CHANGE' : 'GRADE_ADJUSTMENT';
+      const approvedByValue = approvedBy ? approvedBy : 'NULL';
+      await client.$queryRawUnsafe(`
+        INSERT INTO "salary_histories" (
+          "employeeId", "changeType", "oldBaseSalary", "newBaseSalary", reason, "effectiveDate", "approvedBy", "createdAt"
+        )
+        VALUES (
+          ${Number(employeeId)}, '${changeType}', ${oldBaseSalary || 'NULL'}, ${newBaseSalary}, 'Salary update', '${today}', ${approvedByValue}, NOW()
+        )
+      `);
+    }
+
+    setClause.push('"updatedAt" = NOW()');
+
+    if (setClause.length === 1 && !hasSalaryChange) {
       // Only updatedAt
-      return this.formatProfileResponse(employees[0]);
+      return this.getEmployee(tenantSlug, employeeId);
     }
 
-    const updateQuery = `UPDATE "employees" SET ${updates.join(', ')} WHERE id = ${Number(employeeId)} RETURNING *`;
+    if (setClause.length > 1 || hasSalaryChange) {
+      await client.$queryRawUnsafe(`UPDATE "employees" SET ${setClause.join(', ')} WHERE id = ${Number(employeeId)}`);
+    }
 
-    const updated = await client.$queryRaw(updateQuery, ...params);
-
-    return this.formatProfileResponse(updated[0]);
+    return this.getEmployee(tenantSlug, employeeId);
   }
 
   /**
@@ -557,6 +624,7 @@ export class EmployeesService {
       user: userData,
       firstName: employee.firstName,
       lastName: employee.lastName,
+      email: employee.email,
       position: employee.position,
       department: employee.department,
       joinDate: new Date(employee.joinDate),
@@ -633,9 +701,11 @@ export class EmployeesService {
 
     try {
       const query = `
-        SELECT e.*, u.id as user_id, u.email, u.role, u."isActive" as user_is_active, u."createdAt" as user_created_at, u."updatedAt" as user_updated_at
+        SELECT e.*, u.id as user_id, u.email, u.role, u."isActive" as user_is_active, u."createdAt" as user_created_at, u."updatedAt" as user_updated_at,
+               s."baseSalary" as salary_base, s.allowances as salary_allowances
         FROM "employees" e
         LEFT JOIN "users" u ON e."userId" = u.id
+        LEFT JOIN "salaries" s ON e.id = s."employeeId" AND s."isActive" = true AND s."endDate" IS NULL
         WHERE e.id = ${employeeId} AND e."deletedAt" IS NULL
       `;
       const employees = await client.$queryRawUnsafe(query);

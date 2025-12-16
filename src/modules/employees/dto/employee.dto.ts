@@ -323,6 +323,14 @@ export class CreateEmployeeDto {
 // Update DTO
 export class UpdateEmployeeDto {
   @ApiPropertyOptional({
+    description: 'Email address (only updatable by HR/ADMIN/SUPER)',
+    example: 'john.doe@example.com',
+  })
+  @IsEmail()
+  @IsOptional()
+  email?: string;
+
+  @ApiPropertyOptional({
     description: 'Employee first name',
     example: 'John',
   })
@@ -564,6 +572,15 @@ export class UpdateEmployeeDto {
   baseSalary?: number;
 
   @ApiPropertyOptional({
+    description: 'Allowances',
+    example: 5000000,
+  })
+  @IsNumber()
+  @IsOptional()
+  @Type(() => Number)
+  allowances?: number;
+
+  @ApiPropertyOptional({
     description: 'Is active',
     example: true,
   })
@@ -746,6 +763,12 @@ export class EmployeeProfileDto {
 
   @ApiProperty()
   lastName: string;
+
+  @ApiPropertyOptional({
+    description: 'Email address',
+    example: 'john.doe@example.com',
+  })
+  email?: string | null;
 
   @ApiProperty()
   position: string;
