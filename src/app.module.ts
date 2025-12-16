@@ -7,6 +7,7 @@ import { AuthModule } from './auth/auth.module';
 import { TenantModule } from './modules/tenant/tenant.module';
 import { UsersModule } from './modules/users/users.module';
 import { EmployeesModule } from './modules/employees/employees.module';
+import { SettingsModule } from './modules/settings/settings.module';
 
 @Module({
   imports: [
@@ -19,6 +20,7 @@ import { EmployeesModule } from './modules/employees/employees.module';
     TenantModule,
     UsersModule,
     EmployeesModule,
+    SettingsModule,
   ],
   controllers: [AppController],
   providers: [AppService],

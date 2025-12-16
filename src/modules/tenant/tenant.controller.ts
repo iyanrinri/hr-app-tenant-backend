@@ -6,12 +6,14 @@ import {
   UseGuards,
   HttpCode,
   HttpStatus,
+  Param,
 } from '@nestjs/common';
 import {
   ApiTags,
   ApiOperation,
   ApiResponse,
   ApiBearerAuth,
+  ApiParam,
 } from '@nestjs/swagger';
 import { TenantService } from './tenant.service';
 import { RegisterDto, LoginDto } from './dto';
@@ -144,5 +146,37 @@ export class TenantController {
   })
   async getProfile(@CurrentUser() user: any) {
     return this.tenantService.getProfile(user.id);
+  }
+
+  @Get(':slug')
+  @ApiOperation({
+    summary: 'Get tenant info by slug',
+    description: 'Retrieve tenant information by tenant slug (public endpoint)',
+  })
+  @ApiParam({
+    name: 'slug',
+    description: 'Tenant slug (e.g., my-company)',
+    example: 'my-company',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Tenant information retrieved successfully',
+    schema: {
+      example: {
+        id: 'cm0987654321',
+        name: 'My Company',
+        slug: 'my-company',
+        email: 'admin@mycompany.com',
+        createdAt: '2024-12-14T10:00:00Z',
+        updatedAt: '2024-12-14T10:00:00Z',
+      },
+    },
+  })
+  @ApiResponse({
+    status: 404,
+    description: 'Not found - Tenant not found',
+  })
+  async getTenantInfo(@Param('slug') slug: string) {
+    return this.tenantService.getTenantBySlug(slug);
   }
 }

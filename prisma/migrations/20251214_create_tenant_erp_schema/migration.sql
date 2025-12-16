@@ -1,34 +1,26 @@
--- CreateEnum (with IF NOT EXISTS since enum might be created by previous migration)
+-- Fix Role enum - update to include SUPER and HR roles
 DO $$ BEGIN
-  CREATE TYPE "Role" AS ENUM ('SUPER', 'HR', 'MANAGER', 'EMPLOYEE');
+  ALTER TYPE "Role" ADD VALUE 'SUPER' BEFORE 'ADMIN';
 EXCEPTION
   WHEN duplicate_object THEN null;
 END $$;
 
--- CreateTable
-CREATE TABLE IF NOT EXISTS "users" (
-    "id" BIGSERIAL NOT NULL,
-    "email" TEXT NOT NULL,
-    "password" TEXT NOT NULL,
-    "role" "Role" NOT NULL DEFAULT 'EMPLOYEE',
-    "isActive" BOOLEAN NOT NULL DEFAULT false,
-    "deletedAt" TIMESTAMP(3),
-    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    "updatedAt" TIMESTAMP(3) NOT NULL,
+DO $$ BEGIN
+  ALTER TYPE "Role" ADD VALUE 'HR';
+EXCEPTION
+  WHEN duplicate_object THEN null;
+END $$;
 
-    CONSTRAINT "users_pkey" PRIMARY KEY ("id")
-);
-
--- CreateTable
+-- CreateTable for employees (in master database)
 CREATE TABLE IF NOT EXISTS "employees" (
     "id" BIGSERIAL NOT NULL,
-    "userId" BIGINT NOT NULL,
+    "userId" TEXT NOT NULL,
     "firstName" TEXT NOT NULL,
     "lastName" TEXT NOT NULL,
     "position" TEXT NOT NULL,
     "department" TEXT NOT NULL,
     "joinDate" TIMESTAMP(3) NOT NULL,
-    "isActive" BOOLEAN NOT NULL DEFAULT false,
+    "isActive" BOOLEAN NOT NULL DEFAULT true,
     "deletedAt" TIMESTAMP(3),
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" TIMESTAMP(3) NOT NULL,
@@ -37,10 +29,7 @@ CREATE TABLE IF NOT EXISTS "employees" (
 );
 
 -- CreateIndex
-CREATE UNIQUE INDEX IF NOT EXISTS "users_email_key" ON "users"("email");
-
--- CreateIndex
-CREATE UNIQUE INDEX IF NOT EXISTS "employees_userId_key" ON "employees"("userId");
+CREATE UNIQUE INDEX IF NOT EXISTS "employees_userId_unique" ON "employees"("userId");
 
 -- AddForeignKey
 DO $$ BEGIN

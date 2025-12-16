@@ -292,6 +292,49 @@ export class DatabaseTenantService {
         CREATE INDEX IF NOT EXISTS "idx_salary_histories_change_type" ON "salary_histories"("changeType");
       `);
 
+      // Create SettingCategory and SettingDataType enums
+      await tenantClient.query(`
+        DO $$ BEGIN
+          CREATE TYPE "SettingCategory" AS ENUM ('COMPANY', 'ATTENDANCE', 'GENERAL', 'NOTIFICATION', 'SECURITY');
+        EXCEPTION
+          WHEN duplicate_object THEN null;
+        END $$;
+      `);
+
+      await tenantClient.query(`
+        DO $$ BEGIN
+          CREATE TYPE "SettingDataType" AS ENUM ('STRING', 'INTEGER', 'BOOLEAN', 'JSON');
+        EXCEPTION
+          WHEN duplicate_object THEN null;
+        END $$;
+      `);
+
+      // Create settings table
+      await tenantClient.query(`
+        CREATE TABLE IF NOT EXISTS "settings" (
+          "id" BIGSERIAL PRIMARY KEY,
+          "key" VARCHAR(255) NOT NULL UNIQUE,
+          "value" TEXT NOT NULL,
+          "category" "SettingCategory" NOT NULL,
+          "description" TEXT,
+          "dataType" "SettingDataType" NOT NULL DEFAULT 'STRING',
+          "isPublic" BOOLEAN NOT NULL DEFAULT false,
+          "createdBy" TEXT NOT NULL,
+          "updatedBy" TEXT NOT NULL,
+          "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP
+        );
+      `);
+
+      // Create indexes for settings
+      await tenantClient.query(`
+        CREATE INDEX IF NOT EXISTS "idx_settings_category" ON "settings"("category");
+      `);
+
+      await tenantClient.query(`
+        CREATE INDEX IF NOT EXISTS "idx_settings_is_public" ON "settings"("isPublic");
+      `);
+
       // Seed initial user if seedData provided
       if (seedData) {
         try {

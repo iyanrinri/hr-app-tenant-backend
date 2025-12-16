@@ -2,6 +2,7 @@ import {
   BadRequestException,
   Injectable,
   UnauthorizedException,
+  NotFoundException,
 } from '@nestjs/common';
 import { PrismaService } from '../../database/prisma.service';
 import { DatabaseTenantService } from '../../database/database-tenant.service';
@@ -147,5 +148,25 @@ export class TenantService {
 
     const { password, ...userWithoutPassword } = user;
     return userWithoutPassword as any;
+  }
+
+  async getTenantBySlug(slug: string) {
+    const tenant = await this.prisma.tenant.findUnique({
+      where: { slug },
+      select: {
+        id: true,
+        name: true,
+        slug: true,
+        email: true,
+        createdAt: true,
+        updatedAt: true,
+      },
+    });
+
+    if (!tenant) {
+      throw new NotFoundException('Tenant not found');
+    }
+
+    return tenant;
   }
 }

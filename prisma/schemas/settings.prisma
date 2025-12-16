@@ -1,0 +1,45 @@
+// Prisma schema for Settings - Tenant Database
+// This schema is used for each tenant's individual database
+
+generator client {
+  provider = "prisma-client-js"
+  output   = "../node_modules/.prisma/client-settings"
+}
+
+// Note: Datasource is configured dynamically in EmployeePrismaService
+// based on the tenant's database connection string
+
+// Setting model - Application settings per tenant
+model Setting {
+  id          BigInt   @id @default(autoincrement())
+  key         String   @unique
+  value       String   @db.Text
+  category    SettingCategory
+  description String?  @db.Text
+  dataType    SettingDataType @default(STRING)
+  isPublic    Boolean  @default(false)
+  createdBy   String
+  updatedBy   String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([category])
+  @@index([isPublic])
+  @@map("settings")
+}
+
+// Enums for Setting
+enum SettingCategory {
+  COMPANY
+  ATTENDANCE
+  GENERAL
+  NOTIFICATION
+  SECURITY
+}
+
+enum SettingDataType {
+  STRING
+  INTEGER
+  BOOLEAN
+  JSON
+}
