@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, BadRequestException } from '@nestjs/common';
 import { EmployeePrismaService } from '../../../database/employee-prisma.service';
 import { CreateSettingDto } from '../dto/create-setting.dto';
 import { UpdateSettingDto } from '../dto/update-setting.dto';
@@ -9,7 +9,13 @@ export class SettingsRepository {
   constructor(private readonly employeePrisma: EmployeePrismaService) {}
 
   private getPrismaForTenant(tenantSlug: string): any {
-    return this.employeePrisma.getClient(tenantSlug);
+    if (!tenantSlug || tenantSlug.trim() === '') {
+      throw new BadRequestException('Tenant slug is required and cannot be empty');
+    }
+    console.log('getPrismaForTenant called with:', tenantSlug);
+    const client = this.employeePrisma.getClient(tenantSlug);
+    console.log('Got client:', client ? 'defined' : 'undefined');
+    return client;
   }
 
   async create(tenantSlug: string, data: CreateSettingDto & { createdBy: string; updatedBy: string }) {

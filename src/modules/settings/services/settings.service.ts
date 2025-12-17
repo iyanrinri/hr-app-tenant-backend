@@ -1,16 +1,53 @@
 import { Injectable, NotFoundException, ConflictException, BadRequestException } from '@nestjs/common';
-import { SettingsRepository } from '../repositories/settings.repository';
+import { SettingsPrismaService } from '../../../database/settings-prisma.service';
 import { CreateSettingDto, SettingDataType, SettingCategory } from '../dto/create-setting.dto';
 import { UpdateSettingDto } from '../dto/update-setting.dto';
 import { SettingsFilterDto } from '../dto/settings-filter.dto';
 
 @Injectable()
 export class SettingsService {
-  constructor(private settingsRepository: SettingsRepository) {}
+  constructor(private settingsPrisma: SettingsPrismaService) {
+    if (!this.settingsPrisma) {
+      console.error('[Settings Service] SettingsPrismaService is not injected!');
+    }
+  }
+
+  private getClient(tenantId: string) {
+    console.log('[Settings Service getClient] Called with tenantId:', tenantId);
+    
+    if (!tenantId || tenantId.trim() === '') {
+      const error = new BadRequestException('Tenant slug is required and cannot be empty');
+      console.error('[Settings Service getClient] Error:', error.message);
+      throw error;
+    }
+
+    if (!this.settingsPrisma) {
+      const error = new BadRequestException('SettingsPrismaService is not available');
+      console.error('[Settings Service getClient] Error:', error.message);
+      throw error;
+    }
+
+    console.log('[Settings Service getClient] Calling settingsPrisma.getClient...');
+    const client = this.settingsPrisma.getClient(tenantId);
+    
+    if (!client) {
+      const error = new BadRequestException('Failed to get database client for tenant');
+      console.error('[Settings Service getClient] Client is null/undefined');
+      throw error;
+    }
+
+    console.log('[Settings Service getClient] Got client successfully');
+    return client;
+  }
 
   async create(tenantId: string, createSettingDto: CreateSettingDto, userId: string) {
+    const client = this.getClient(tenantId);
+
     // Check if setting key already exists
-    const existing = await this.settingsRepository.findByKey(tenantId, createSettingDto.key);
+    const existing = await client.setting.findUnique({
+      where: { key: createSettingDto.key },
+    });
+    
     if (existing) {
       throw new ConflictException(`Setting with key '${createSettingDto.key}' already exists`);
     }
@@ -19,44 +56,90 @@ export class SettingsService {
     this.validateSettingValue(createSettingDto.value, createSettingDto.dataType);
 
     try {
-      const result = await this.settingsRepository.create(tenantId, {
-        key: createSettingDto.key,
-        value: createSettingDto.value,
-        category: createSettingDto.category,
-        description: createSettingDto.description,
-        dataType: createSettingDto.dataType,
-        isPublic: createSettingDto.isPublic,
-        createdBy: userId,
-        updatedBy: userId,
+      await client.setting.create({
+        data: {
+          ...createSettingDto,
+          createdBy: userId,
+          updatedBy: userId,
+        },
       });
 
-      return this.transformSetting(await this.settingsRepository.findByKey(tenantId, createSettingDto.key));
+      const result = await client.setting.findUnique({
+        where: { key: createSettingDto.key },
+      });
+
+      return this.transformSetting(result);
     } catch (error) {
+      console.error('Create setting error:', error);
       throw new BadRequestException('Failed to create setting');
     }
   }
 
   async findAll(tenantId: string, filter: SettingsFilterDto) {
-    const { page = 1, limit = 10 } = filter;
+    console.log('[Settings Service findAll] Called with tenantId:', tenantId, 'filter:', filter);
+    
+    try {
+      const client = this.getClient(tenantId);
+      console.log('[Settings Service findAll] Got client, proceeding with query');
+    
+      const { page = 1, limit = 10, category, isPublic, searchTerm } = filter;
+      const skip = (page - 1) * limit;
+      const take = limit;
 
-    const [settings, total] = await Promise.all([
-      this.settingsRepository.findAll(tenantId, filter),
-      this.settingsRepository.count(tenantId, filter),
-    ]);
+      let whereConditions: string[] = [];
 
-    return {
-      data: settings.map((setting: any) => this.transformSetting(setting)),
-      pagination: {
-        page,
-        limit,
-        total,
-        totalPages: Math.ceil(total / limit),
-      },
-    };
+      if (category) {
+        whereConditions.push(`category = '${category}'`);
+      }
+
+      if (isPublic !== undefined) {
+        whereConditions.push(`"isPublic" = ${isPublic}`);
+      }
+
+      if (searchTerm) {
+        const escapedTerm = searchTerm.replace(/'/g, "''");
+        whereConditions.push(`(key ILIKE '%${escapedTerm}%' OR description ILIKE '%${escapedTerm}%')`);
+      }
+
+      const whereClause = whereConditions.length > 0 ? `WHERE ${whereConditions.join(' AND ')}` : '';
+
+      console.log('[Settings Service findAll] Executing query with where clause:', whereClause);
+
+      const [settings, countResult] = await Promise.all([
+        client.$queryRawUnsafe(
+          `SELECT * FROM "settings" ${whereClause} ORDER BY category ASC, key ASC LIMIT ${take} OFFSET ${skip}`
+        ),
+        client.$queryRawUnsafe(
+          `SELECT COUNT(*) as count FROM "settings" ${whereClause}`
+        ),
+      ]);
+
+      const total = (countResult as any[])[0]?.count || 0;
+      const totalNumber = typeof total === 'bigint' ? Number(total) : total;
+
+      console.log('[Settings Service findAll] Query successful, got', settings.length, 'settings');
+
+      return {
+        data: (settings as any[]).map((setting: any) => this.transformSetting(setting)),
+        pagination: {
+          page,
+          limit,
+          total: totalNumber,
+          totalPages: Math.ceil(totalNumber / limit),
+        },
+      };
+    } catch (error) {
+      console.error('[Settings Service findAll] Error:', error);
+      throw error;
+    }
   }
 
   async findByKey(tenantId: string, key: string) {
-    const setting = await this.settingsRepository.findByKey(tenantId, key);
+    const client = this.getClient(tenantId);
+    const setting = await client.setting.findUnique({
+      where: { key },
+    });
+    
     if (!setting) {
       throw new NotFoundException(`Setting with key '${key}' not found`);
     }
@@ -65,53 +148,85 @@ export class SettingsService {
   }
 
   async update(tenantId: string, key: string, updateSettingDto: UpdateSettingDto, userId: string) {
-    const existing = await this.settingsRepository.findByKey(tenantId, key);
-    if (!existing) {
+    const client = this.getClient(tenantId);
+    
+    // Check if setting exists
+    const existing = await client.$queryRawUnsafe(
+      `SELECT * FROM "settings" WHERE key = '${key}'`
+    );
+    
+    if (!existing || (existing as any[]).length === 0) {
       throw new NotFoundException(`Setting with key '${key}' not found`);
     }
 
+    const existingSetting = (existing as any[])[0];
+
     // Validate value if provided
     if (updateSettingDto.value !== undefined) {
-      const dataType = updateSettingDto.dataType || existing.dataType;
+      const dataType = updateSettingDto.dataType || existingSetting.dataType;
       this.validateSettingValue(updateSettingDto.value, dataType);
     }
 
     try {
-      await this.settingsRepository.update(tenantId, key, {
-        ...updateSettingDto,
-        updatedBy: userId,
-      });
+      const updateValue = updateSettingDto.value !== undefined ? updateSettingDto.value.replace(/'/g, "''") : existingSetting.value;
+      const updateDataType = updateSettingDto.dataType || existingSetting.dataType;
+      
+      await client.$queryRawUnsafe(
+        `UPDATE "settings" 
+         SET value = '${updateValue}', 
+             "dataType" = '${updateDataType}',
+             "updatedBy" = '${userId}', 
+             "updatedAt" = CURRENT_TIMESTAMP
+         WHERE key = '${key}'`
+      );
 
-      return this.transformSetting(await this.settingsRepository.findByKey(tenantId, key));
+      const result = await client.$queryRawUnsafe(
+        `SELECT * FROM "settings" WHERE key = '${key}'`
+      );
+
+      return this.transformSetting((result as any[])[0]);
     } catch (error) {
+      console.error('Update setting error:', error);
       throw new BadRequestException('Failed to update setting');
     }
   }
 
   async remove(tenantId: string, key: string) {
-    const existing = await this.settingsRepository.findByKey(tenantId, key);
+    const client = this.getClient(tenantId);
+    const existing = await client.setting.findUnique({
+      where: { key },
+    });
+    
     if (!existing) {
       throw new NotFoundException(`Setting with key '${key}' not found`);
     }
 
-    await this.settingsRepository.delete(tenantId, key);
+    await client.setting.delete({
+      where: { key },
+    });
+    
     return { message: `Setting '${key}' deleted successfully` };
   }
 
   async getByCategory(tenantId: string, category: SettingCategory) {
-    const settings = await this.settingsRepository.getByCategory(tenantId, category);
+    const client = this.getClient(tenantId);
+    const settings = await client.setting.findMany({
+      where: { category },
+    });
     return settings.map((setting: any) => this.transformSetting(setting));
   }
 
   async getPublicSettings(tenantId: string) {
-    const settings = await this.settingsRepository.getPublicSettings(tenantId);
+    const client = this.getClient(tenantId);
+    const settings = await client.setting.findMany({
+      where: { isPublic: true },
+    });
     return settings.map((setting: any) => this.transformSetting(setting));
   }
 
-  // Get specific company settings for public access
   async getCompanyInfo(tenantId: string) {
-    const companySettings = await this.settingsRepository.getByCategory(tenantId, SettingCategory.COMPANY);
-    const publicSettings = companySettings.filter((setting: any) => setting.isPublic);
+    const companySettings = await this.getByCategory(tenantId, SettingCategory.COMPANY);
+    const publicSettings = companySettings.filter((setting: any) => setting?.isPublic);
 
     const companyInfo: any = {
       name: null,
@@ -161,14 +276,13 @@ export class SettingsService {
     return companyInfo;
   }
 
-  // Get attendance settings
   async getAttendanceSettings(tenantId: string) {
-    const attendanceSettings = await this.settingsRepository.getByCategory(tenantId, SettingCategory.ATTENDANCE);
+    const attendanceSettings = await this.getByCategory(tenantId, SettingCategory.ATTENDANCE);
     
     const settings: any = {
       allowWeekendWork: false,
       checkPointEnabled: false,
-      checkPointRadius: 100, // meters
+      checkPointRadius: 100,
       checkPointLatitude: null,
       checkPointLongitude: null,
       checkPointAddress: null,
@@ -202,11 +316,9 @@ export class SettingsService {
           settings.checkPointRadius = parsed;
           break;
         case 'attendance_checkpoint_lat':
-          // Parse as string and convert to number if not empty
           settings.checkPointLatitude = parsed && parsed !== '' ? parseFloat(parsed) : null;
           break;
         case 'attendance_checkpoint_lng':
-          // Parse as string and convert to number if not empty
           settings.checkPointLongitude = parsed && parsed !== '' ? parseFloat(parsed) : null;
           break;
         case 'attendance_checkpoint_address':
@@ -264,8 +376,6 @@ export class SettingsService {
   }
 
   async getOvertimeSettings() {
-    // Temporary implementation - returns default values
-    // TODO: Implement proper settings retrieval when PAYROLL category is added to schema
     return {
       enabled: false,
       minThresholdMinutes: 60,
@@ -281,10 +391,10 @@ export class SettingsService {
     };
   }
 
-  // Initialize default settings
   async initializeDefaultSettings(tenantId: string, userId: string) {
+    const client = this.getClient(tenantId);
+    
     const defaultSettings = [
-      // Company settings
       { key: 'company_name', value: 'Your Company Name', category: SettingCategory.COMPANY, description: 'Company name displayed in application', dataType: SettingDataType.STRING, isPublic: true },
       { key: 'company_description', value: 'Your company description', category: SettingCategory.COMPANY, description: 'Brief company description', dataType: SettingDataType.STRING, isPublic: true },
       { key: 'company_logo', value: '', category: SettingCategory.COMPANY, description: 'Company logo URL or base64', dataType: SettingDataType.FILE, isPublic: true },
@@ -292,14 +402,10 @@ export class SettingsService {
       { key: 'company_phone', value: '', category: SettingCategory.COMPANY, description: 'Company phone number', dataType: SettingDataType.STRING, isPublic: true },
       { key: 'company_email', value: '', category: SettingCategory.COMPANY, description: 'Company email address', dataType: SettingDataType.STRING, isPublic: true },
       { key: 'company_website', value: '', category: SettingCategory.COMPANY, description: 'Company website URL', dataType: SettingDataType.STRING, isPublic: true },
-
-      // System settings
       { key: 'system_language', value: 'en', category: SettingCategory.GENERAL, description: 'Default application language', dataType: SettingDataType.STRING, isPublic: true },
       { key: 'system_timezone', value: 'UTC', category: SettingCategory.GENERAL, description: 'Default timezone', dataType: SettingDataType.STRING, isPublic: false },
       { key: 'system_date_format', value: 'YYYY-MM-DD', category: SettingCategory.GENERAL, description: 'Date display format', dataType: SettingDataType.STRING, isPublic: true },
       { key: 'system_time_format', value: '24h', category: SettingCategory.GENERAL, description: 'Time display format (12h/24h)', dataType: SettingDataType.STRING, isPublic: true },
-
-      // Attendance settings
       { key: 'attendance_weekend_work', value: 'false', category: SettingCategory.ATTENDANCE, description: 'Allow weekend attendance', dataType: SettingDataType.BOOLEAN, isPublic: false },
       { key: 'attendance_checkpoint_enabled', value: 'false', category: SettingCategory.ATTENDANCE, description: 'Enable location-based check point', dataType: SettingDataType.BOOLEAN, isPublic: false },
       { key: 'attendance_checkpoint_radius', value: '100', category: SettingCategory.ATTENDANCE, description: 'Check point radius in meters', dataType: SettingDataType.INTEGER, isPublic: false },
@@ -310,17 +416,9 @@ export class SettingsService {
       { key: 'attendance_early_leave_tolerance', value: '15', category: SettingCategory.ATTENDANCE, description: 'Early leave tolerance in minutes', dataType: SettingDataType.INTEGER, isPublic: false },
       { key: 'attendance_overtime_enabled', value: 'false', category: SettingCategory.ATTENDANCE, description: 'Enable overtime tracking', dataType: SettingDataType.BOOLEAN, isPublic: false },
       { key: 'attendance_overtime_threshold', value: '60', category: SettingCategory.ATTENDANCE, description: 'Overtime threshold in minutes', dataType: SettingDataType.INTEGER, isPublic: false },
-
-      // Overtime rate and limit settings
-      // TODO: Add overtime settings when PAYROLL category is available
-      // { key: 'overtime_max_hours_per_day', value: '4', category: SettingCategory.ATTENDANCE, description: 'Maximum overtime hours per day', dataType: SettingDataType.INTEGER, isPublic: false },
-
-      // Notification settings
       { key: 'notification_email_enabled', value: 'false', category: SettingCategory.NOTIFICATION, description: 'Enable email notifications', dataType: SettingDataType.BOOLEAN, isPublic: false },
       { key: 'notification_sms_enabled', value: 'false', category: SettingCategory.NOTIFICATION, description: 'Enable SMS notifications', dataType: SettingDataType.BOOLEAN, isPublic: false },
       { key: 'notification_realtime_enabled', value: 'true', category: SettingCategory.NOTIFICATION, description: 'Enable real-time notifications', dataType: SettingDataType.BOOLEAN, isPublic: false },
-
-      // Security settings
       { key: 'security_session_timeout', value: '3600', category: SettingCategory.SECURITY, description: 'Session timeout in seconds', dataType: SettingDataType.INTEGER, isPublic: false },
       { key: 'security_password_min_length', value: '8', category: SettingCategory.SECURITY, description: 'Minimum password length', dataType: SettingDataType.INTEGER, isPublic: false },
       { key: 'security_max_login_attempts', value: '5', category: SettingCategory.SECURITY, description: 'Maximum login attempts before lockout', dataType: SettingDataType.INTEGER, isPublic: false },
@@ -330,13 +428,16 @@ export class SettingsService {
 
     for (const setting of defaultSettings) {
       try {
-        const existing = await this.settingsRepository.findByKey(tenantId, setting.key);
-        if (!existing) {
-          await this.settingsRepository.create(tenantId, {
-            ...setting,
-            createdBy: userId,
-            updatedBy: userId,
-          });
+        // Check if setting already exists
+        const existing = await client.$queryRawUnsafe(
+          `SELECT * FROM "settings" WHERE key = '${setting.key}'`
+        );
+        
+        if (!existing || (existing as any[]).length === 0) {
+          await client.$queryRawUnsafe(
+            `INSERT INTO "settings" (key, value, category, description, "dataType", "isPublic", "createdBy", "updatedBy", "createdAt", "updatedAt")
+             VALUES ('${setting.key}', '${setting.value.replace(/'/g, "''")}', '${setting.category}', '${setting.description.replace(/'/g, "''")}', '${setting.dataType}', ${setting.isPublic}, '${userId}', '${userId}', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`
+          );
           createdSettings.push(setting.key);
         }
       } catch (error) {
@@ -407,7 +508,6 @@ export class SettingsService {
           throw new BadRequestException('JSON setting must be valid JSON');
         }
         break;
-      // STRING and FILE types don't need validation
     }
   }
 }

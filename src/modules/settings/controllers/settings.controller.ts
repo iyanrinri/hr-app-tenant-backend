@@ -25,15 +25,18 @@ import { UpdateSettingDto } from '../dto/update-setting.dto';
 import { SettingsFilterDto } from '../dto/settings-filter.dto';
 import { JwtAuthGuard } from '../../../common/guards/jwt-auth.guard';
 import { Role } from '@prisma/client';
+import { RolesGuard } from '@/common/guards';
+import { Roles } from '@/common/decorators';
 
 @ApiTags('settings')
 @ApiBearerAuth('bearer')
-@UseGuards(JwtAuthGuard)
-@Controller('settings')
+@UseGuards(JwtAuthGuard, RolesGuard)
+@Controller(':tenant_slug/settings')
 export class SettingsController {
   constructor(private readonly settingsService: SettingsService) {}
 
   @Post()
+  @Roles('ADMIN', 'SUPER')
   @ApiOperation({ 
     summary: 'Create a new setting',
     description: 'Create a new application setting. Only SUPER users can create settings.' 
@@ -41,27 +44,32 @@ export class SettingsController {
   @ApiResponse({ status: 201, description: 'Setting created successfully' })
   @ApiResponse({ status: 403, description: 'Forbidden - Only SUPER users can create settings' })
   @ApiResponse({ status: 409, description: 'Setting key already exists' })
-  async create(@Body() createSettingDto: CreateSettingDto, @Request() req: any) {
-    if (req.user.role !== Role.SUPER) {
-      throw new ForbiddenException('Only SUPER users can create settings');
-    }
-
-    return this.settingsService.create(req.user.tenantSlug, createSettingDto, req.user.id);
+  async create(
+    @Param('tenant_slug') tenantSlug: string,
+    @Body() createSettingDto: CreateSettingDto,
+    @Request() req: any
+  ) {
+    return this.settingsService.create(tenantSlug, createSettingDto, req.user.id);
   }
 
   @Get()
+  @Roles('ADMIN', 'SUPER', 'HR')
   @ApiOperation({ 
     summary: 'Get all settings with pagination and filtering',
-    description: 'Retrieve settings with pagination, filtering, and search. SUPER users see all, others see only public settings.' 
+    description: 'Retrieve settings with pagination, filtering, and search. SUPER and ADMIN see all, HR sees only public settings.' 
   })
+  @ApiParam({ name: 'tenant_slug', description: 'Tenant slug', required: true })
   @ApiResponse({ status: 200, description: 'Settings retrieved successfully' })
-  async findAll(@Query() filter: SettingsFilterDto, @Request() req: any) {
-    // Non-super users can only see public settings
-    if (req.user.role !== Role.SUPER) {
+  async findAll(
+    @Param('tenant_slug') tenantSlug: string,
+    @Query() filter: SettingsFilterDto,
+    @Request() req: any
+  ) {
+    if (req.user.role === Role.HR) {
       filter.isPublic = true;
     }
 
-    return this.settingsService.findAll(req.user.tenantSlug, filter);
+    return this.settingsService.findAll(tenantSlug, filter);
   }
 
   @Get('public')
@@ -70,8 +78,11 @@ export class SettingsController {
     description: 'Retrieve all public settings available to all authenticated users' 
   })
   @ApiResponse({ status: 200, description: 'Public settings retrieved successfully' })
-  async getPublicSettings(@Request() req: any) {
-    return this.settingsService.getPublicSettings(req.user.tenantSlug);
+  async getPublicSettings(
+    @Param('tenant_slug') tenantSlug: string,
+    @Request() req: any
+  ) {
+    return this.settingsService.getPublicSettings(tenantSlug);
   }
 
   @Get('company')
@@ -97,8 +108,11 @@ export class SettingsController {
       }
     }
   })
-  async getCompanyInfo(@Request() req: any) {
-    return this.settingsService.getCompanyInfo(req.user.tenantSlug);
+  async getCompanyInfo(
+    @Param('tenant_slug') tenantSlug: string,
+    @Request() req: any
+  ) {
+    return this.settingsService.getCompanyInfo(tenantSlug);
   }
 
   @Get('attendance')
@@ -108,12 +122,15 @@ export class SettingsController {
   })
   @ApiResponse({ status: 200, description: 'Attendance settings retrieved successfully' })
   @ApiResponse({ status: 403, description: 'Forbidden - Only SUPER and HR users can access attendance settings' })
-  async getAttendanceSettings(@Request() req: any) {
+  async getAttendanceSettings(
+    @Param('tenant_slug') tenantSlug: string,
+    @Request() req: any
+  ) {
     if (req.user.role !== Role.SUPER && req.user.role !== Role.HR) {
       throw new ForbiddenException('Only SUPER and HR users can access attendance settings');
     }
 
-    return this.settingsService.getAttendanceSettings(req.user.tenantSlug);
+    return this.settingsService.getAttendanceSettings(tenantSlug);
   }
 
   @Get('category/:category')
@@ -128,10 +145,11 @@ export class SettingsController {
   })
   @ApiResponse({ status: 200, description: 'Settings retrieved successfully' })
   async getByCategory(
+    @Param('tenant_slug') tenantSlug: string,
     @Param('category') category: SettingCategory,
     @Request() req: any
   ) {
-    const settings = await this.settingsService.getByCategory(req.user.tenantSlug, category);
+    const settings = await this.settingsService.getByCategory(tenantSlug, category);
     
     // Non-super users can only see public settings
     if (req.user.role !== Role.SUPER) {
@@ -150,8 +168,12 @@ export class SettingsController {
   @ApiResponse({ status: 200, description: 'Setting retrieved successfully' })
   @ApiResponse({ status: 404, description: 'Setting not found' })
   @ApiResponse({ status: 403, description: 'Forbidden - Cannot access private setting' })
-  async findOne(@Param('key') key: string, @Request() req: any) {
-    const setting = await this.settingsService.findByKey(req.user.tenantSlug, key);
+  async findOne(
+    @Param('tenant_slug') tenantSlug: string,
+    @Param('key') key: string,
+    @Request() req: any
+  ) {
+    const setting = await this.settingsService.findByKey(tenantSlug, key);
     
     if (!setting) {
       throw new ForbiddenException('Setting not found');
@@ -166,24 +188,26 @@ export class SettingsController {
   }
 
   @Patch(':key')
+  @Roles('ADMIN', 'SUPER')
   @ApiOperation({ 
     summary: 'Update setting by key',
-    description: 'Update a specific setting. Only SUPER users can update settings.' 
+    description: 'Update a specific setting. Only ADMIN and SUPER users can update settings.' 
   })
   @ApiParam({ name: 'key', description: 'Setting key', example: 'company_name' })
   @ApiResponse({ status: 200, description: 'Setting updated successfully' })
-  @ApiResponse({ status: 403, description: 'Forbidden - Only SUPER users can update settings' })
+  @ApiResponse({ status: 403, description: 'Forbidden - Only ADMIN and SUPER users can update settings' })
   @ApiResponse({ status: 404, description: 'Setting not found' })
   async update(
+    @Param('tenant_slug') tenantSlug: string,
     @Param('key') key: string,
     @Body() updateSettingDto: UpdateSettingDto,
     @Request() req: any
   ) {
-    if (req.user.role !== Role.SUPER) {
-      throw new ForbiddenException('Only SUPER users can update settings');
+    if (req.user.role !== Role.SUPER && req.user.role !== Role.ADMIN) {
+      throw new ForbiddenException('Only ADMIN and SUPER users can update settings');
     }
 
-    return this.settingsService.update(req.user.tenantSlug, key, updateSettingDto, req.user.id);
+    return this.settingsService.update(tenantSlug, key, updateSettingDto, req.user.id);
   }
 
   @Delete(':key')
@@ -195,26 +219,34 @@ export class SettingsController {
   @ApiResponse({ status: 200, description: 'Setting deleted successfully' })
   @ApiResponse({ status: 403, description: 'Forbidden - Only SUPER users can delete settings' })
   @ApiResponse({ status: 404, description: 'Setting not found' })
-  async remove(@Param('key') key: string, @Request() req: any) {
+  async remove(
+    @Param('tenant_slug') tenantSlug: string,
+    @Param('key') key: string,
+    @Request() req: any
+  ) {
     if (req.user.role !== Role.SUPER) {
       throw new ForbiddenException('Only SUPER users can delete settings');
     }
 
-    return this.settingsService.remove(req.user.tenantSlug, key);
+    return this.settingsService.remove(tenantSlug, key);
   }
 
   @Post('initialize')
+  @Roles('ADMIN', 'SUPER')
   @ApiOperation({ 
     summary: 'Initialize default settings',
-    description: 'Create default application settings. Only SUPER users can initialize.' 
+    description: 'Create default application settings. Only ADMIN and SUPER users can initialize.' 
   })
   @ApiResponse({ status: 201, description: 'Default settings initialized successfully' })
-  @ApiResponse({ status: 403, description: 'Forbidden - Only SUPER users can initialize settings' })
-  async initializeDefaults(@Request() req: any) {
-    if (req.user.role !== Role.SUPER) {
-      throw new ForbiddenException('Only SUPER users can initialize settings');
+  @ApiResponse({ status: 403, description: 'Forbidden - Only ADMIN and SUPER users can initialize settings' })
+  async initializeDefaults(
+    @Param('tenant_slug') tenantSlug: string,
+    @Request() req: any
+  ) {
+    if (req.user.role !== Role.SUPER && req.user.role !== Role.ADMIN) {
+      throw new ForbiddenException('Only ADMIN and SUPER users can initialize settings');
     }
 
-    return this.settingsService.initializeDefaultSettings(req.user.tenantSlug, req.user.id);
+    return this.settingsService.initializeDefaultSettings(tenantSlug, req.user.id);
   }
 }
