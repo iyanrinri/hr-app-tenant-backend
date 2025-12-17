@@ -9,6 +9,7 @@ import { UsersModule } from './modules/users/users.module';
 import { EmployeesModule } from './modules/employees/employees.module';
 import { SettingsModule } from './modules/settings/settings.module';
 import { AttendancePeriodModule } from './modules/attendance-period/attendance-period.module';
+import { AttendanceModule } from './modules/attendance/attendance.module';
 
 @Module({
   imports: [
@@ -23,6 +24,7 @@ import { AttendancePeriodModule } from './modules/attendance-period/attendance-p
     EmployeesModule,
     SettingsModule,
     AttendancePeriodModule,
+    AttendanceModule,
   ],
   controllers: [AppController],
   providers: [AppService],

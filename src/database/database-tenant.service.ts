@@ -335,6 +335,132 @@ export class DatabaseTenantService {
         CREATE INDEX IF NOT EXISTS "idx_settings_is_public" ON "settings"("isPublic");
       `);
 
+      // Create AttendanceStatus enum
+      await tenantClient.query(`
+        DO $$ BEGIN
+          CREATE TYPE "AttendanceStatus" AS ENUM ('PRESENT', 'LATE', 'ABSENT', 'LEAVE', 'SICK', 'REMOTE', 'HALF_DAY');
+        EXCEPTION
+          WHEN duplicate_object THEN null;
+        END $$;
+      `);
+
+      // Create attendance_period table
+      await tenantClient.query(`
+        CREATE TABLE IF NOT EXISTS "attendance_period" (
+          "id" BIGSERIAL PRIMARY KEY,
+          "name" VARCHAR(255) NOT NULL,
+          "startDate" DATE NOT NULL,
+          "endDate" DATE NOT NULL,
+          "workDays" INTEGER NOT NULL DEFAULT 0,
+          "isActive" BOOLEAN NOT NULL DEFAULT true,
+          "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP
+        );
+      `);
+
+      // Create attendances table
+      await tenantClient.query(`
+        CREATE TABLE IF NOT EXISTS "attendances" (
+          "id" BIGSERIAL PRIMARY KEY,
+          "employeeId" BIGINT NOT NULL,
+          "attendancePeriodId" BIGINT NOT NULL,
+          "date" DATE NOT NULL,
+          "checkIn" TIMESTAMP(3),
+          "checkOut" TIMESTAMP(3),
+          "checkInLocation" TEXT,
+          "checkOutLocation" TEXT,
+          "workDuration" INTEGER,
+          "status" VARCHAR(50) NOT NULL,
+          "notes" TEXT,
+          "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          CONSTRAINT "attendances_employeeId_fkey" FOREIGN KEY ("employeeId") REFERENCES "employees"("id") ON DELETE CASCADE,
+          CONSTRAINT "attendances_attendancePeriodId_fkey" FOREIGN KEY ("attendancePeriodId") REFERENCES "attendance_period"("id") ON DELETE CASCADE
+        );
+      `);
+
+      // Create attendance_log table
+      await tenantClient.query(`
+        CREATE TABLE IF NOT EXISTS "attendance_log" (
+          "id" BIGSERIAL PRIMARY KEY,
+          "attendanceId" BIGINT NOT NULL,
+          "employeeId" BIGINT NOT NULL,
+          "action" VARCHAR(50) NOT NULL,
+          "oldValues" TEXT,
+          "newValues" TEXT,
+          "modifiedBy" BIGINT,
+          "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          CONSTRAINT "attendance_log_attendanceId_fkey" FOREIGN KEY ("attendanceId") REFERENCES "attendances"("id") ON DELETE CASCADE,
+          CONSTRAINT "attendance_log_employeeId_fkey" FOREIGN KEY ("employeeId") REFERENCES "employees"("id") ON DELETE CASCADE
+        );
+      `);
+
+      // Create holiday table
+      await tenantClient.query(`
+        CREATE TABLE IF NOT EXISTS "holiday" (
+          "id" BIGSERIAL PRIMARY KEY,
+          "attendancePeriodId" BIGINT NOT NULL,
+          "name" VARCHAR(255) NOT NULL,
+          "date" DATE NOT NULL,
+          "isRecurring" BOOLEAN NOT NULL DEFAULT false,
+          "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          CONSTRAINT "holiday_attendancePeriodId_fkey" FOREIGN KEY ("attendancePeriodId") REFERENCES "attendance_period"("id") ON DELETE CASCADE
+        );
+      `);
+
+      // Create indexes for attendance_period
+      await tenantClient.query(`
+        CREATE INDEX IF NOT EXISTS "idx_attendance_period_is_active" ON "attendance_period"("isActive");
+      `);
+
+      await tenantClient.query(`
+        CREATE INDEX IF NOT EXISTS "idx_attendance_period_dates" ON "attendance_period"("startDate", "endDate");
+      `);
+
+      // Create indexes for attendances
+      await tenantClient.query(`
+        CREATE INDEX IF NOT EXISTS "idx_attendances_employee_id" ON "attendances"("employeeId");
+      `);
+
+      await tenantClient.query(`
+        CREATE INDEX IF NOT EXISTS "idx_attendances_period_id" ON "attendances"("attendancePeriodId");
+      `);
+
+      await tenantClient.query(`
+        CREATE INDEX IF NOT EXISTS "idx_attendances_date" ON "attendances"("date");
+      `);
+
+      await tenantClient.query(`
+        CREATE INDEX IF NOT EXISTS "idx_attendances_status" ON "attendances"("status");
+      `);
+
+      await tenantClient.query(`
+        CREATE UNIQUE INDEX IF NOT EXISTS "idx_attendances_employee_period_date" ON "attendances"("employeeId", "attendancePeriodId", "date");
+      `);
+
+      // Create indexes for attendance_log
+      await tenantClient.query(`
+        CREATE INDEX IF NOT EXISTS "idx_attendance_log_attendance_id" ON "attendance_log"("attendanceId");
+      `);
+
+      await tenantClient.query(`
+        CREATE INDEX IF NOT EXISTS "idx_attendance_log_employee_id" ON "attendance_log"("employeeId");
+      `);
+
+      await tenantClient.query(`
+        CREATE INDEX IF NOT EXISTS "idx_attendance_log_action" ON "attendance_log"("action");
+      `);
+
+      // Create indexes for holiday
+      await tenantClient.query(`
+        CREATE INDEX IF NOT EXISTS "idx_holiday_period_id" ON "holiday"("attendancePeriodId");
+      `);
+
+      await tenantClient.query(`
+        CREATE INDEX IF NOT EXISTS "idx_holiday_date" ON "holiday"("date");
+      `);
+
       // Seed initial user if seedData provided
       if (seedData) {
         try {

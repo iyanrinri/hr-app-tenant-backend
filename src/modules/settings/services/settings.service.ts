@@ -210,10 +210,18 @@ export class SettingsService {
 
   async getByCategory(tenantId: string, category: SettingCategory) {
     const client = this.getClient(tenantId);
-    const settings = await client.setting.findMany({
-      where: { category },
-    });
-    return settings.map((setting: any) => this.transformSetting(setting));
+    try {
+      const query = `
+        SELECT * FROM "settings"
+        WHERE category = '${category}'
+        ORDER BY key ASC
+      `;
+      const settings = await client.$queryRawUnsafe(query);
+      return (settings as any[]).map((setting: any) => this.transformSetting(setting));
+    } catch (error) {
+      console.error('[Settings Service] Error in getByCategory:', error);
+      return [];
+    }
   }
 
   async getPublicSettings(tenantId: string) {
