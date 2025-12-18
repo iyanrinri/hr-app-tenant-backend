@@ -342,6 +342,8 @@ export class AttendanceRepository {
       const allEmployees = await client.$queryRawUnsafe(employeesQuery);
 
       // Get today's attendance records with employee data using raw SQL
+      // Check both date field and checkIn timestamp to handle edge cases where
+      // an employee clocks in after midnight (date field may be yesterday)
       const attendanceQuery = `
         SELECT 
           a.*,
@@ -354,7 +356,10 @@ export class AttendanceRepository {
         FROM "attendances" a
         LEFT JOIN "employees" e ON a."employeeId" = e.id
         LEFT JOIN "users" u ON e."userId" = u.id
-        WHERE a."date" = '${dateStr}'::date
+        WHERE (
+            DATE(a."date") = '${dateStr}'::date
+            OR DATE(a."checkIn") = '${dateStr}'::date
+          )
           AND a."attendancePeriodId" = ${attendancePeriodId}
       `;
       const todayAttendancesRaw = await client.$queryRawUnsafe(attendanceQuery);
