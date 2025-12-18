@@ -23,11 +23,17 @@ export class AttendanceRepository {
     const dateStr = date.toISOString().split('T')[0];
 
     try {
+      // Find attendance for today based on:
+      // 1. The date field matches today
+      // 2. OR the checkIn timestamp is today (regardless of the date field value)
       const query = `
         SELECT * FROM "attendances"
         WHERE "employeeId" = ${employeeId}
-          AND DATE("date") = '${dateStr}'::date
-        ORDER BY "date" DESC
+          AND (
+            DATE("date") = '${dateStr}'::date
+            OR DATE("checkIn") = '${dateStr}'::date
+          )
+        ORDER BY "checkIn" DESC
         LIMIT 1
       `;
       const result = await client.$queryRawUnsafe(query);

@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
+import { EventEmitterModule } from '@nestjs/event-emitter';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { DatabaseModule } from './database/database.module';
@@ -10,6 +11,7 @@ import { EmployeesModule } from './modules/employees/employees.module';
 import { SettingsModule } from './modules/settings/settings.module';
 import { AttendancePeriodModule } from './modules/attendance-period/attendance-period.module';
 import { AttendanceModule } from './modules/attendance/attendance.module';
+import { KafkaModule } from './common/modules/kafka.module';
 
 @Module({
   imports: [
@@ -17,6 +19,8 @@ import { AttendanceModule } from './modules/attendance/attendance.module';
       isGlobal: true,
       envFilePath: '.env',
     }),
+    EventEmitterModule.forRoot(),
+    KafkaModule,
     DatabaseModule,
     AuthModule,
     TenantModule,

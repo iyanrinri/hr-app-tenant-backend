@@ -6,21 +6,19 @@ import { ClockOutDto } from '../dto/clock-out.dto';
 import { AttendanceHistoryDto } from '../dto/attendance-history.dto';
 import { Role } from '@prisma/client';
 import { AttendanceStatus, AttendanceType } from '../repositories/attendance.repository';
-// import { NotificationService } from '../../../common/services/notification.service';
-// import { NotificationGateway } from '../../../common/gateways/notification.gateway';
-// import { AttendanceEvent } from '../../../common/services/kafka.service';
 import { SettingsService } from '../../settings/services/settings.service';
 import { validateLocation, isValidCoordinates } from '../../../common/utils/location.util';
 import { AttendanceRepository } from '../repositories/attendance.repository';
+import { KafkaProducerService } from '../../../common/services/kafka-producer.service';
+import { ATTENDANCE_EVENTS } from '../../../common/events/attendance.events';
 
 @Injectable()
 export class AttendanceService {
   constructor(
     private attendanceRepository: AttendanceRepository,
     private attendancePeriodService: AttendancePeriodService,
-    // private notificationService: NotificationService,
-    // private notificationGateway: NotificationGateway,
     private settingsService: SettingsService,
+    private kafkaProducer: KafkaProducerService,
   ) {}
 
   /**
@@ -74,10 +72,10 @@ export class AttendanceService {
     // Check if it's a working day
     const activePeriod = await this.attendancePeriodService.getActivePeriod(tenantSlug);
     // TODO: Add working day validation
-    // const isWorkingDay = await this.attendancePeriodService.isWorkingDay(tenantSlug, today, BigInt(activePeriod.id));
-    // if (!isWorkingDay) {
-    //   throw new BadRequestException('Cannot clock in on weekends or holidays');
-    // }
+    const isWorkingDay = await this.attendancePeriodService.isWorkingDay(tenantSlug, today, BigInt(activePeriod.id));
+    if (!isWorkingDay) {
+      throw new BadRequestException('Cannot clock in on weekends or holidays');
+    }
 
     // Check if already clocked in today
     const existingAttendance = await this.attendanceRepository.findTodayAttendance(tenantSlug, employeeId, today);
@@ -139,10 +137,7 @@ export class AttendanceService {
       modifiedBy: `employee_${employeeId}`,
     });
 
-    // Send notification after successful clock-in
-    await this.sendClockInNotification(tenantSlug, employeeId, now, attendance.status === AttendanceStatus.LATE, locationData);
-
-    // Send dashboard update to admin clients
+    // Send dashboard update
     await this.sendDashboardUpdate(tenantSlug);
 
     return {
@@ -163,10 +158,10 @@ export class AttendanceService {
     // Check if it's a working day
     const activePeriod = await this.attendancePeriodService.getActivePeriod(tenantSlug);
     // TODO: Add working day validation
-    // const isWorkingDay = await this.attendancePeriodService.isWorkingDay(tenantSlug, today, BigInt(activePeriod.id));
-    // if (!isWorkingDay) {
-    //   throw new BadRequestException('Cannot clock out on weekends or holidays');
-    // }
+    const isWorkingDay = await this.attendancePeriodService.isWorkingDay(tenantSlug, today, BigInt(activePeriod.id));
+    if (!isWorkingDay) {
+      throw new BadRequestException('Cannot clock out on weekends or holidays');
+    }
 
     // Check if clocked in today
     const existingAttendance = await this.attendanceRepository.findTodayAttendance(tenantSlug, employeeId, today);
@@ -220,19 +215,7 @@ export class AttendanceService {
         notes: clockOutDto.notes ? `${existingAttendance.notes || ''}; ${clockOutDto.notes}` : existingAttendance.notes,
       },
     });
-
-    // Send notification after successful clock-out
-    await this.sendClockOutNotification(
-      tenantSlug,
-      employeeId, 
-      now, 
-      isEarlyLeave, 
-      workDuration, 
-      locationData,
-      !!existingAttendance.checkOut // was already clocked out
-    );
-
-    // Send dashboard update to admin clients
+    // Send dashboard update
     await this.sendDashboardUpdate(tenantSlug);
 
     return {
@@ -250,10 +233,17 @@ export class AttendanceService {
     const attendance = await this.attendanceRepository.findTodayAttendance(tenantSlug, employeeId, today);
     
     if (!attendance) {
-      return null;
+      return {
+        hasAttendance: false,
+        date: today.toISOString().split('T')[0],
+        message: 'No attendance record for today',
+      };
     }
 
-    return this.transformAttendance(attendance);
+    return {
+      hasAttendance: true,
+      ...this.transformAttendance(attendance),
+    };
   }
 
   async getAttendanceHistory(tenantSlug: string, query: AttendanceHistoryDto, userRole: Role, requestingUserId: string) {
@@ -437,76 +427,6 @@ export class AttendanceService {
     };
   }
 
-  // Helper method to send clock-in notification
-  private async sendClockInNotification(
-    tenantSlug: string,
-    employeeId: bigint,
-    timestamp: Date,
-    isLate: boolean,
-    location: any
-  ) {
-    try {
-      const employeeInfo = await this.getEmployeeInfo(tenantSlug, employeeId);
-      
-      // const event: AttendanceEvent = {
-      //   type: 'CLOCK_IN',
-      //   employeeId: employeeId.toString(),
-      //   employeeName: employeeInfo.fullName,
-      //   department: employeeInfo.department,
-      //   timestamp: timestamp.toISOString(),
-      //   location: {
-      //     latitude: location.latitude,
-      //     longitude: location.longitude,
-      //     address: location.address,
-      //   },
-      //   isLate,
-      // };
-
-      // await this.notificationService.sendAttendanceNotification(event);
-    } catch (error) {
-      // Don't block attendance process if notification fails
-      console.error('Failed to send clock-in notification:', error);
-    }
-  }
-
-  // Helper method to send clock-out notification
-  private async sendClockOutNotification(
-    tenantSlug: string,
-    employeeId: bigint,
-    timestamp: Date,
-    isEarlyLeave: boolean,
-    workDuration: number,
-    location: any,
-    wasAlreadyClockedOut: boolean
-  ) {
-    try {
-      const employeeInfo = await this.getEmployeeInfo(tenantSlug, employeeId);
-      
-      // const event: AttendanceEvent = {
-      //   type: 'CLOCK_OUT',
-      //   employeeId: employeeId.toString(),
-      //   employeeName: employeeInfo.fullName,
-      //   department: employeeInfo.department,
-      //   timestamp: timestamp.toISOString(),
-      //   location: {
-      //     latitude: location.latitude,
-      //     longitude: location.longitude,
-      //     address: location.address,
-      //   },
-      //   isEarlyLeave,
-      //   workDuration,
-      // };
-
-      // // Only send notification if this is first clock-out or if it's an update worth notifying
-      // if (!wasAlreadyClockedOut || isEarlyLeave) {
-      //   await this.notificationService.sendAttendanceNotification(event);
-      // }
-    } catch (error) {
-      // Don't block attendance process if notification fails
-      console.error('Failed to send clock-out notification:', error);
-    }
-  }
-
   // Helper method to get employee information for notifications
   private async getEmployeeInfo(tenantSlug: string, employeeId: bigint) {
     const employee = await this.attendanceRepository.findEmployeeById(tenantSlug, Number(employeeId));
@@ -642,16 +562,31 @@ export class AttendanceService {
   private parseTime(timeString: string) {
     const [hours, minutes] = timeString.split(':').map(Number);
     return { hours, minutes };
-  }
-
-  // Send dashboard update notification
+  }  // Send dashboard update to Kafka
   private async sendDashboardUpdate(tenantSlug: string) {
     try {
+      console.log(`[AttendanceService] 📤 Starting dashboard update for tenant: ${tenantSlug}`);
       const dashboardData = await this.getDashboardToday(tenantSlug);
-      // await this.notificationGateway.sendDashboardUpdate(dashboardData);
+      
+      const eventPayload = {
+        tenantSlug,
+        ...dashboardData,
+      };
+
+      console.log(`[AttendanceService] 🚀 Sending to Kafka - Event: ${ATTENDANCE_EVENTS.DASHBOARD_UPDATE}`);
+      console.log(`[AttendanceService] 📊 Payload summary:`, {
+        tenantSlug,
+        presentCount: dashboardData.presentEmployees?.length || 0,
+        absentCount: dashboardData.absentEmployees?.length || 0,
+        lateCount: dashboardData.lateEmployees?.length || 0,
+      });
+
+      // Emit to Kafka - will be consumed by EventPattern controller
+      this.kafkaProducer.emit(ATTENDANCE_EVENTS.DASHBOARD_UPDATE, eventPayload);
+      console.log(`[AttendanceService] ✅ Kafka emit completed`);
     } catch (error) {
       // Don't block attendance process if dashboard update fails
-      console.error('Failed to send dashboard update:', error);
+      console.error('[AttendanceService] ❌ Failed to send dashboard update:', error);
     }
   }
 }

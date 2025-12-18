@@ -147,8 +147,12 @@ export class AttendanceController {
       }
       targetEmployeeId = BigInt(employeeId);
     } else {
-      // If no employeeId provided, use current user's ID
-      targetEmployeeId = currentUserId;
+      // If no employeeId provided, get employee ID from current user
+      const employee = await this.employeeService.findByUserId(tenantSlug, currentUserId);
+      if (!employee) {
+        throw new ForbiddenException('Employee record not found. Please contact administrator.');
+      }
+      targetEmployeeId = employee.id;
     }
 
     return this.attendanceService.getAttendanceStats(tenantSlug, targetEmployeeId, startDate, endDate);

@@ -329,4 +329,45 @@ export class AttendancePeriodService {
       updatedAt: holiday.updatedAt instanceof Date ? holiday.updatedAt.toISOString() : holiday.updatedAt,
     };
   }
+
+
+  async isWorkingDay(tenantSlug :string, date: Date, attendancePeriodId?: bigint): Promise<boolean> {
+    // Get the period configuration
+    let periodConfig;
+    if (attendancePeriodId) {
+      periodConfig = await this.findOne(tenantSlug, attendancePeriodId);
+    } else {
+      periodConfig = await this.getActivePeriod(tenantSlug);
+    }
+
+    if (!periodConfig) {
+      throw new Error('No attendance period found');
+    }
+
+    // Check if it's weekend and whether weekend work is allowed
+    const dayOfWeek = date.getDay();
+    
+    // Sunday = 0, Saturday = 6
+    if (dayOfWeek === 0 && !periodConfig.allowSundayWork) {
+      return false; // Sunday not allowed
+    }
+    
+    if (dayOfWeek === 6 && !periodConfig.allowSaturdayWork) {
+      return false; // Saturday not allowed  
+    }
+
+    // Check if it's a holiday
+    const client = this.attendancePeriodPrisma.getClient(tenantSlug);
+    const dateStr = date.toISOString().split('T')[0];
+    
+    let whereClause = `WHERE date::date = '${dateStr}'::date`;
+    if (attendancePeriodId) {
+      whereClause += ` AND ("attendancePeriodId" = ${attendancePeriodId} OR ("attendancePeriodId" IS NULL AND "isNational" = true))`;
+    }
+    
+    const query = `SELECT * FROM "holiday" ${whereClause}`;
+    const holidays = await client.$queryRawUnsafe(query);
+    
+    return (holidays as any[]).length === 0;
+  }
 }
