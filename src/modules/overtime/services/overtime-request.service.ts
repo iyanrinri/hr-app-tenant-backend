@@ -263,7 +263,7 @@ export class OvertimeRequestService {
         },
         orderBy: { submittedAt: 'desc' }
       }),
-      this.overtimeRequestRepository.count(where)
+      this.overtimeRequestRepository.count(tenantSlug, where)
     ]);
 
     return {
@@ -337,7 +337,52 @@ export class OvertimeRequestService {
       throw new BadRequestException('Can only update pending overtime requests');
     }
 
-    const updateData: any = { ...updateOvertimeRequestDto };
+    const updateData: any = {};
+
+    // Handle date/time updates
+    if (updateOvertimeRequestDto.date) {
+      updateData.date = new Date(updateOvertimeRequestDto.date);
+    }
+    
+    if (updateOvertimeRequestDto.startTime) {
+      updateData.startTime = new Date(updateOvertimeRequestDto.startTime);
+    }
+    
+    if (updateOvertimeRequestDto.endTime) {
+      updateData.endTime = new Date(updateOvertimeRequestDto.endTime);
+    }
+
+    // Recalculate totalMinutes if times are being updated
+    if (updateOvertimeRequestDto.startTime || updateOvertimeRequestDto.endTime) {
+      const startTime = updateData.startTime || existingRequest.startTime;
+      const endTime = updateData.endTime || existingRequest.endTime;
+      updateData.totalMinutes = this.calculateOvertimeMinutes(startTime, endTime);
+    }
+
+    // Handle other fields
+    if (updateOvertimeRequestDto.reason) {
+      updateData.reason = updateOvertimeRequestDto.reason;
+    }
+    
+    if (updateOvertimeRequestDto.employeeId) {
+      updateData.employeeId = BigInt(updateOvertimeRequestDto.employeeId);
+    }
+
+    if (updateOvertimeRequestDto.status) {
+      updateData.status = updateOvertimeRequestDto.status;
+    }
+
+    if (updateOvertimeRequestDto.managerComments) {
+      updateData.managerComments = updateOvertimeRequestDto.managerComments;
+    }
+
+    if (updateOvertimeRequestDto.hrComments) {
+      updateData.hrComments = updateOvertimeRequestDto.hrComments;
+    }
+
+    if (updateOvertimeRequestDto.rejectionReason) {
+      updateData.rejectionReason = updateOvertimeRequestDto.rejectionReason;
+    }
 
     // Set finalized timestamp if status is changing to final state
     if (updateData.status && ['APPROVED', 'REJECTED', 'CANCELLED'].includes(updateData.status)) {

@@ -47,7 +47,7 @@ export class OvertimeRequestController {
     // Employees can only submit overtime for themselves
     // Override employeeId with the logged-in employee's ID for EMPLOYEE role
     if (req.user.role === Role.EMPLOYEE) {
-      const employeeId = await this.overtimeRequestService.getEmployeeIdByUserId(tenantSlug, req.user.sub);
+      const employeeId = await this.overtimeRequestService.getEmployeeIdByUserId(tenantSlug, req.user.id);
       if (!employeeId) {
         throw new Error('Employee record not found for this user');
       }
@@ -197,7 +197,7 @@ export class OvertimeRequestController {
   }
 
   @Patch(':id')
-  @Roles(Role.SUPER, Role.ADMIN, Role.HR, Role.MANAGER)
+  @Roles(Role.SUPER, Role.ADMIN, Role.HR, Role.MANAGER, Role.EMPLOYEE)
   @ApiOperation({ summary: 'Update overtime request (SUPER/HR/MANAGER only)' })
   @ApiParam({ name: 'id', type: Number, description: 'Overtime request ID' })
   @ApiBody({ type: UpdateOvertimeRequestDto, description: 'Overtime request update data' })
@@ -215,7 +215,7 @@ export class OvertimeRequestController {
   }
 
   @Delete(':id')
-  @Roles(Role.SUPER, Role.HR)
+  @Roles(Role.SUPER, Role.HR, Role.MANAGER, Role.EMPLOYEE)
   @ApiOperation({ summary: 'Delete overtime request (SUPER/HR only)' })
   @ApiParam({ name: 'id', type: Number, description: 'Overtime request ID' })
   @ApiResponse({ status: 200, description: 'Overtime request deleted successfully' })

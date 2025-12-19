@@ -222,7 +222,7 @@ export class OvertimeApprovalService {
         },
         orderBy: { createdAt: 'desc' }
       }),
-      this.overtimeApprovalRepository.count(where)
+      this.overtimeApprovalRepository.count(tenantSlug, where)
     ]);
 
     return {

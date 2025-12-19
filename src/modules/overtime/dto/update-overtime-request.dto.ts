@@ -1,4 +1,4 @@
-import { IsString, IsOptional, IsEnum } from 'class-validator';
+import { IsString, IsOptional, IsEnum, IsDateString, IsNumber } from 'class-validator';
 import { ApiPropertyOptional } from '@nestjs/swagger';
 
 export enum OvertimeStatus {
@@ -11,6 +11,46 @@ export enum OvertimeStatus {
 }
 
 export class UpdateOvertimeRequestDto {
+  @ApiPropertyOptional({ 
+    example: 123,
+    description: 'Employee ID (only for ADMIN/SUPER)'
+  })
+  @IsNumber()
+  @IsOptional()
+  employeeId?: number;
+
+  @ApiPropertyOptional({ 
+    example: '2024-12-12',
+    description: 'Date of the overtime work'
+  })
+  @IsDateString()
+  @IsOptional()
+  date?: string;
+
+  @ApiPropertyOptional({ 
+    example: '2024-12-12T18:00:00Z',
+    description: 'Start time of overtime work'
+  })
+  @IsDateString()
+  @IsOptional()
+  startTime?: string;
+
+  @ApiPropertyOptional({ 
+    example: '2024-12-12T21:00:00Z',
+    description: 'End time of overtime work'
+  })
+  @IsDateString()
+  @IsOptional()
+  endTime?: string;
+
+  @ApiPropertyOptional({ 
+    example: 'System deployment and maintenance work',
+    description: 'Reason for overtime work'
+  })
+  @IsString()
+  @IsOptional()
+  reason?: string;
+
   @ApiPropertyOptional({ 
     enum: OvertimeStatus,
     example: OvertimeStatus.APPROVED,

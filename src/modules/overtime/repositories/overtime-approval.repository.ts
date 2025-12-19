@@ -6,7 +6,27 @@ export class OvertimeApprovalRepository {
   constructor(private prisma: MultiTenantPrismaService) {}
 
   async create(tenantSlug: string, data: any) {
-    return this.prisma.getClient(tenantSlug).overtimeApproval.create({ data });
+    const client = this.prisma.getClient(tenantSlug);
+    
+    const query = `
+      INSERT INTO overtime_approval (
+        "overtimeRequestId", "approverId", "approverType", status,
+        comments, "approvedAt", "createdAt", "updatedAt"
+      ) VALUES (
+        ${data.overtimeRequestId},
+        ${data.approverId},
+        '${data.approverType}',
+        '${data.status || 'PENDING'}'::"ApprovalStatus",
+        ${data.comments ? `'${data.comments.replace(/'/g, "''")}'` : 'NULL'},
+        ${data.approvedAt ? `'${data.approvedAt.toISOString()}'` : 'NULL'},
+        NOW(),
+        NOW()
+      )
+      RETURNING *
+    `;
+    
+    const result = await client.$queryRawUnsafe(query);
+    return result[0];
   }
 
   async findAll(tenantSlug: string, params: {
@@ -17,16 +37,34 @@ export class OvertimeApprovalRepository {
     orderBy?: any;
     include?: any;
   }): Promise<any[]> {
-    const { skip, take, cursor, where, orderBy, include } = params;
+    const client = this.prisma.getClient(tenantSlug);
+    const { skip = 0, take = 20 } = params;
     
-    return this.prisma.getClient(tenantSlug).overtimeApproval.findMany({
-      skip,
-      take,
-      cursor,
-      where,
-      orderBy,
-      include,
-    });
+    const query = `
+      SELECT 
+        oa.*,
+        json_build_object(
+          'id', ap.id,
+          'firstName', ap."firstName",
+          'lastName', ap."lastName",
+          'position', ap.position,
+          'department', ap.department
+        ) as approver,
+        json_build_object(
+          'id', ot.id,
+          'employeeId', ot."employeeId",
+          'date', ot.date,
+          'reason', ot.reason,
+          'status', ot.status
+        ) as "overtimeRequest"
+      FROM overtime_approval oa
+      LEFT JOIN employees ap ON ap.id = oa."approverId"
+      LEFT JOIN overtime_request ot ON ot.id = oa."overtimeRequestId"
+      ORDER BY oa."createdAt" DESC
+      LIMIT ${take} OFFSET ${skip}
+    `;
+    
+    return await client.$queryRawUnsafe(query);
   }
 
   async findUnique(
@@ -34,37 +72,64 @@ export class OvertimeApprovalRepository {
     where: any,
     include?: any
   ): Promise<any | null> {
-    return this.prisma.getClient(tenantSlug).overtimeApproval.findUnique({
-      where,
-      include,
-    });
+    const client = this.prisma.getClient(tenantSlug);
+    const id = where.id;
+    
+    const query = `
+      SELECT 
+        oa.*,
+        json_build_object(
+          'id', ap.id,
+          'firstName', ap."firstName",
+          'lastName', ap."lastName",
+          'position', ap.position,
+          'department', ap.department
+        ) as approver,
+        json_build_object(
+          'id', ot.id,
+          'employeeId', ot."employeeId",
+          'date', ot.date,
+          'reason', ot.reason,
+          'status', ot.status
+        ) as "overtimeRequest"
+      FROM overtime_approval oa
+      LEFT JOIN employees ap ON ap.id = oa."approverId"
+      LEFT JOIN overtime_request ot ON ot.id = oa."overtimeRequestId"
+      WHERE oa.id = ${id}
+    `;
+    
+    const result = await client.$queryRawUnsafe(query);
+    return result[0] || null;
   }
 
   async findByRequest(tenantSlug: string, overtimeRequestId: bigint): Promise<any[]> {
-    return this.prisma.getClient(tenantSlug).overtimeApproval.findMany({
-      where: { overtimeRequestId },
-      include: {
-        approver: {
-          select: {
-            id: true,
-            firstName: true,
-            lastName: true,
-            position: true,
-            department: true
-          }
-        },
-        overtimeRequest: {
-          select: {
-            id: true,
-            employeeId: true,
-            date: true,
-            reason: true,
-            status: true
-          }
-        }
-      },
-      orderBy: { createdAt: 'asc' }
-    });
+    const client = this.prisma.getClient(tenantSlug);
+    
+    const query = `
+      SELECT 
+        oa.*,
+        json_build_object(
+          'id', ap.id,
+          'firstName', ap."firstName",
+          'lastName', ap."lastName",
+          'position', ap.position,
+          'department', ap.department
+        ) as approver,
+        json_build_object(
+          'id', ot.id,
+          'employeeId', ot."employeeId",
+          'date', ot.date,
+          'reason', ot.reason,
+          'status', ot.status
+        ) as "overtimeRequest"
+      FROM overtime_approval oa
+      LEFT JOIN employees ap ON ap.id = oa."approverId"
+      LEFT JOIN overtime_request ot ON ot.id = oa."overtimeRequestId"
+      WHERE oa."overtimeRequestId" = ${overtimeRequestId}
+      ORDER BY oa."createdAt" ASC
+    `;
+    
+    return await client.$queryRawUnsafe(query);
   }
 
   async findByApprover(
@@ -77,50 +142,53 @@ export class OvertimeApprovalRepository {
       approverType?: string;
     }
   ): Promise<any[]> {
+    const client = this.prisma.getClient(tenantSlug);
     const { skip = 0, take = 20, status, approverType } = params || {};
 
-    const where: any = {
-      approverId,
-    };
-
+    let whereClause = `WHERE oa."approverId" = ${approverId}`;
+    
     if (status) {
-      where.status = status as any;
+      whereClause += ` AND oa.status = '${status}'::"ApprovalStatus"`;
     }
-
+    
     if (approverType) {
-      where.approverType = approverType;
+      whereClause += ` AND oa."approverType" = '${approverType}'`;
     }
 
-    return this.prisma.getClient(tenantSlug).overtimeApproval.findMany({
-      skip,
-      take,
-      where,
-      include: {
-        approver: {
-          select: {
-            id: true,
-            firstName: true,
-            lastName: true,
-            position: true,
-            department: true
-          }
-        },
-        overtimeRequest: {
-          include: {
-            employee: {
-              select: {
-                id: true,
-                firstName: true,
-                lastName: true,
-                position: true,
-                department: true
-              }
-            }
-          }
-        }
-      },
-      orderBy: { createdAt: 'desc' }
-    });
+    const query = `
+      SELECT 
+        oa.*,
+        json_build_object(
+          'id', ap.id,
+          'firstName', ap."firstName",
+          'lastName', ap."lastName",
+          'position', ap.position,
+          'department', ap.department
+        ) as approver,
+        json_build_object(
+          'id', ot.id,
+          'employeeId', ot."employeeId",
+          'date', ot.date,
+          'reason', ot.reason,
+          'status', ot.status,
+          'employee', json_build_object(
+            'id', e.id,
+            'firstName', e."firstName",
+            'lastName', e."lastName",
+            'position', e.position,
+            'department', e.department
+          )
+        ) as "overtimeRequest"
+      FROM overtime_approval oa
+      LEFT JOIN employees ap ON ap.id = oa."approverId"
+      LEFT JOIN overtime_request ot ON ot.id = oa."overtimeRequestId"
+      LEFT JOIN employees e ON e.id = ot."employeeId"
+      ${whereClause}
+      ORDER BY oa."createdAt" DESC
+      LIMIT ${take} OFFSET ${skip}
+    `;
+    
+    return await client.$queryRawUnsafe(query);
   }
 
   async findPendingApprovals(
@@ -128,55 +196,65 @@ export class OvertimeApprovalRepository {
     approverId?: bigint,
     approverType?: string
   ): Promise<any[]> {
-    const where: any = {
-      status: 'PENDING'
-    };
+    const client = this.prisma.getClient(tenantSlug);
 
+    let whereClause = `WHERE oa.status = 'PENDING'::"ApprovalStatus"`;
+    
     if (approverId) {
-      where.approverId = approverId;
+      whereClause += ` AND oa."approverId" = ${approverId}`;
     }
-
+    
     if (approverType) {
-      where.approverType = approverType;
+      whereClause += ` AND oa."approverType" = '${approverType}'`;
     }
 
-    return this.prisma.getClient(tenantSlug).overtimeApproval.findMany({
-      where,
-      include: {
-        approver: {
-          select: {
-            id: true,
-            firstName: true,
-            lastName: true,
-            position: true,
-            department: true
-          }
-        },
-        overtimeRequest: {
-          include: {
-            employee: {
-              select: {
-                id: true,
-                firstName: true,
-                lastName: true,
-                position: true,
-                department: true
-              }
-            },
-            attendance: {
-              select: {
-                id: true,
-                date: true,
-                checkIn: true,
-                checkOut: true,
-                workDuration: true
-              }
-            }
-          }
-        }
-      },
-      orderBy: { createdAt: 'asc' }
-    });
+    const query = `
+      SELECT 
+        oa.*,
+        json_build_object(
+          'id', ap.id,
+          'firstName', ap."firstName",
+          'lastName', ap."lastName",
+          'position', ap.position,
+          'department', ap.department
+        ) as approver,
+        json_build_object(
+          'id', ot.id,
+          'employeeId', ot."employeeId",
+          'date', ot.date,
+          'reason', ot.reason,
+          'status', ot.status,
+          'totalMinutes', ot."totalMinutes",
+          'startTime', ot."startTime",
+          'endTime', ot."endTime",
+          'employee', json_build_object(
+            'id', e.id,
+            'firstName', e."firstName",
+            'lastName', e."lastName",
+            'position', e.position,
+            'department', e.department
+          ),
+          'attendance', CASE 
+            WHEN a.id IS NOT NULL THEN json_build_object(
+              'id', a.id,
+              'date', a.date,
+              'checkIn', a."checkIn",
+              'checkOut', a."checkOut",
+              'workDuration', a."workDuration"
+            )
+            ELSE NULL
+          END
+        ) as "overtimeRequest"
+      FROM overtime_approval oa
+      LEFT JOIN employees ap ON ap.id = oa."approverId"
+      LEFT JOIN overtime_request ot ON ot.id = oa."overtimeRequestId"
+      LEFT JOIN employees e ON e.id = ot."employeeId"
+      LEFT JOIN attendance a ON a.id = ot."attendanceId"
+      ${whereClause}
+      ORDER BY oa."createdAt" ASC
+    `;
+    
+    return await client.$queryRawUnsafe(query);
   }
 
   async findExisting(
@@ -185,15 +263,19 @@ export class OvertimeApprovalRepository {
     approverId: bigint,
     approverType: string
   ): Promise<any | null> {
-    return this.prisma.getClient(tenantSlug).overtimeApproval.findUnique({
-      where: {
-        overtimeRequestId_approverId_approverType: {
-          overtimeRequestId,
-          approverId,
-          approverType
-        }
-      }
-    });
+    const client = this.prisma.getClient(tenantSlug);
+    
+    const query = `
+      SELECT *
+      FROM overtime_approval
+      WHERE "overtimeRequestId" = ${overtimeRequestId}
+        AND "approverId" = ${approverId}
+        AND "approverType" = '${approverType}'
+      LIMIT 1
+    `;
+    
+    const result = await client.$queryRawUnsafe(query);
+    return result[0] || null;
   }
 
   async update(
@@ -201,45 +283,94 @@ export class OvertimeApprovalRepository {
     where: any,
     data: any
   ): Promise<any> {
-    return this.prisma.getClient(tenantSlug).overtimeApproval.update({
-      where,
-      data,
-    });
+    const client = this.prisma.getClient(tenantSlug);
+    const id = where.id;
+    
+    const setClauses: string[] = [];
+    
+    if (data.status !== undefined) setClauses.push(`status = '${data.status}'::"ApprovalStatus"`);
+    if (data.comments !== undefined) setClauses.push(`comments = ${data.comments ? `'${data.comments.replace(/'/g, "''")}'` : 'NULL'}`);
+    if (data.approvedAt !== undefined) setClauses.push(`"approvedAt" = ${data.approvedAt ? `'${data.approvedAt.toISOString()}'` : 'NULL'}`);
+    
+    setClauses.push(`"updatedAt" = NOW()`);
+    
+    const setClause = setClauses.join(', ');
+    
+    const query = `
+      UPDATE overtime_approval
+      SET ${setClause}
+      WHERE id = ${id}
+      RETURNING *
+    `;
+    
+    const result = await client.$queryRawUnsafe(query);
+    return result[0];
   }
 
   async delete(
     tenantSlug: string, where: any): Promise<any> {
-    return this.prisma.getClient(tenantSlug).overtimeApproval.delete({ where });
+    const client = this.prisma.getClient(tenantSlug);
+    const id = where.id;
+    
+    const query = `
+      DELETE FROM overtime_approval
+      WHERE id = ${id}
+      RETURNING *
+    `;
+    
+    const result = await client.$queryRawUnsafe(query);
+    return result[0];
   }
 
   async count(tenantSlug: string, where?: any): Promise<number> {
-    return this.prisma.getClient(tenantSlug).overtimeApproval.count({ where });
+    const client = this.prisma.getClient(tenantSlug);
+    
+    let whereClause = '';
+    if (where?.approverId) {
+      whereClause = `WHERE "approverId" = ${where.approverId}`;
+    }
+    if (where?.status) {
+      whereClause += whereClause ? ' AND ' : 'WHERE ';
+      whereClause += `status = '${where.status}'::"ApprovalStatus"`;
+    }
+    
+    const query = `
+      SELECT COUNT(*)::int as count
+      FROM overtime_approval
+      ${whereClause}
+    `;
+    
+    const result = await client.$queryRawUnsafe(query);
+    return result[0]?.count || 0;
   }
 
   async getApprovalStats(tenantSlug: string, approverId?: bigint, startDate?: Date, endDate?: Date) {
-    const where: any = {};
+    const client = this.prisma.getClient(tenantSlug);
 
+    let whereClause = '';
+    
     if (approverId) {
-      where.approverId = approverId;
+      whereClause = `WHERE "approverId" = ${approverId}`;
     }
-
+    
     if (startDate && endDate) {
-      where.createdAt = {
-        gte: startDate,
-        lte: endDate
-      };
+      whereClause += whereClause ? ' AND ' : 'WHERE ';
+      whereClause += `"createdAt" BETWEEN '${startDate.toISOString()}' AND '${endDate.toISOString()}'`;
     }
 
-    const stats = await this.prisma.getClient(tenantSlug).overtimeApproval.groupBy({
-      by: ['status'],
-      where,
-      _count: {
-        status: true
-      }
-    });
+    const query = `
+      SELECT 
+        status,
+        COUNT(*)::int as count
+      FROM overtime_approval
+      ${whereClause}
+      GROUP BY status
+    `;
+    
+    const result = await client.$queryRawUnsafe(query);
 
-    return stats.reduce((acc: Record<string, number>, curr: { status: string; _count: { status: number } }) => {
-      acc[curr.status] = curr._count.status;
+    return result.reduce((acc: Record<string, number>, curr: { status: string; count: number }) => {
+      acc[curr.status] = curr.count;
       return acc;
     }, {} as Record<string, number>);
   }
