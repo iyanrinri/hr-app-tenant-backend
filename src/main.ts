@@ -73,15 +73,23 @@ async function bootstrap() {
     credentials: true,
   });
 
-  // Start all microservices
-  await app.startAllMicroservices();
-  console.log('✓ Kafka microservice started');
-
   const port = process.env.PORT ?? 3000;
+  
+  // Start HTTP server first
   await app.listen(port);
-  console.log(`✓ Application is running on http://localhost:${port}`);
+  console.log(`✓ HTTP server started on http://localhost:${port}`);
   console.log(`✓ Swagger documentation available at http://localhost:${port}/api`);
   console.log(`✓ WebSocket server running on ws://localhost:${port}/attendance`);
-  console.log(`✓ Kafka consumer group: hr-app-attendance-group`);
+  
+  // Start Kafka microservice in background (deferred)
+  app.startAllMicroservices()
+    .then(() => {
+      console.log('✓ Kafka microservice connected');
+      console.log(`✓ Kafka consumer group: hr-app-attendance-group`);
+    })
+    .catch((error) => {
+      console.error('✗ Failed to start Kafka microservice:', error.message);
+      console.log('→ Application will continue without Kafka');
+    });
 }
 bootstrap();

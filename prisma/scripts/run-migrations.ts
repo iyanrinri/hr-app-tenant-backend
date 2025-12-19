@@ -41,16 +41,20 @@ async function getAllTenants(): Promise<any[]> {
 /**
  * Read migration SQL file
  */
-function getMigrationSQL(): string {
+function getMigrationSQL(migrationName?: string): string {
+  // Default to leave tables migration if not specified
+  const migration = migrationName || '20251218_create_leave_tables';
+  
   const migrationPath = path.join(
     __dirname,
-    '../migrations/20251217_create_attendance_tables/migration.sql'
+    `../migrations/${migration}/migration.sql`
   );
   
   if (!fs.existsSync(migrationPath)) {
     throw new Error(`Migration file not found: ${migrationPath}`);
   }
 
+  console.log(`📄 Reading migration: ${migration}`);
   return fs.readFileSync(migrationPath, 'utf-8');
 }
 
@@ -154,6 +158,15 @@ async function main() {
   try {
     console.log('🚀 Starting migration runner...\n');
 
+    // Get migration name from command line argument
+    const migrationName = process.argv[2];
+    
+    if (migrationName) {
+      console.log(`📦 Migration: ${migrationName}\n`);
+    } else {
+      console.log(`📦 Migration: 20251218_create_leave_tables (default)\n`);
+    }
+
     // Get all tenants
     const tenants = await getAllTenants();
 
@@ -163,7 +176,7 @@ async function main() {
     }
 
     // Read migration SQL
-    const migrationSQL = getMigrationSQL();
+    const migrationSQL = getMigrationSQL(migrationName);
 
     // Run migration for each tenant
     let successCount = 0;

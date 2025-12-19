@@ -11,6 +11,7 @@ import { EmployeesModule } from './modules/employees/employees.module';
 import { SettingsModule } from './modules/settings/settings.module';
 import { AttendancePeriodModule } from './modules/attendance-period/attendance-period.module';
 import { AttendanceModule } from './modules/attendance/attendance.module';
+import { LeaveModule } from './modules/leave/leave.module';
 import { KafkaModule } from './common/modules/kafka.module';
 
 @Module({
@@ -29,6 +30,7 @@ import { KafkaModule } from './common/modules/kafka.module';
     SettingsModule,
     AttendancePeriodModule,
     AttendanceModule,
+    LeaveModule,
   ],
   controllers: [AppController],
   providers: [AppService],
