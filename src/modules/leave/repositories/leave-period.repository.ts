@@ -1,12 +1,11 @@
 import { Injectable } from '@nestjs/common';
-import { LeavePrismaService } from '../../../database/leave-prisma.service';
+import { MultiTenantPrismaService } from '../../../database/multi-tenant-prisma.service'; 
 
 @Injectable()
 export class LeavePeriodRepository {
-  constructor(private leavePrismaService: LeavePrismaService) {}
-
+  constructor(private prisma: MultiTenantPrismaService) {}
   async create(tenantSlug: string, data: any) {
-    const client = this.leavePrismaService.getClient(tenantSlug);
+    const client = this.prisma.getClient(tenantSlug);
     
     // Convert dates to YYYY-MM-DD format
     const startDate = new Date(data.startDate).toISOString().split('T')[0];
@@ -38,7 +37,7 @@ export class LeavePeriodRepository {
     orderBy?: any;
   }) {
     const { skip = 0, take = 10, where, orderBy } = params || {};
-    const client = this.leavePrismaService.getClient(tenantSlug);
+    const client = this.prisma.getClient(tenantSlug);
     
     // Build WHERE clause
     let whereClause = '1=1';
@@ -75,7 +74,7 @@ export class LeavePeriodRepository {
   }
 
   async findById(tenantSlug: string, id: bigint) {
-    const client = this.leavePrismaService.getClient(tenantSlug);
+    const client = this.prisma.getClient(tenantSlug);
     
     const periodResult = await client.$queryRaw`
       SELECT * FROM "leave_period" WHERE id = ${id}
@@ -121,7 +120,7 @@ export class LeavePeriodRepository {
   }
 
   async findActive(tenantSlug: string) {
-    const client = this.leavePrismaService.getClient(tenantSlug);
+    const client = this.prisma.getClient(tenantSlug);
     
     const query = `
       SELECT 
@@ -156,7 +155,7 @@ export class LeavePeriodRepository {
   }
 
   async update(tenantSlug: string, id: bigint, data: any) {
-    const client = this.leavePrismaService.getClient(tenantSlug);
+    const client = this.prisma.getClient(tenantSlug);
     
     const updates: string[] = [];
     if (data.name !== undefined) {
@@ -190,7 +189,7 @@ export class LeavePeriodRepository {
   }
 
   async delete(tenantSlug: string, id: bigint) {
-    const client = this.leavePrismaService.getClient(tenantSlug);
+    const client = this.prisma.getClient(tenantSlug);
     
     const result = await client.$queryRaw`
       DELETE FROM "leave_period" WHERE id = ${id} RETURNING *
@@ -200,7 +199,7 @@ export class LeavePeriodRepository {
   }
 
   async count(tenantSlug: string, where?: any) {
-    const client = this.leavePrismaService.getClient(tenantSlug);
+    const client = this.prisma.getClient(tenantSlug);
     
     // Build WHERE clause
     let whereClause = '1=1';

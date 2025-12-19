@@ -1,12 +1,11 @@
 import { Injectable } from '@nestjs/common';
-import { LeavePrismaService } from '../../../database/leave-prisma.service';
+import { MultiTenantPrismaService } from '../../../database/multi-tenant-prisma.service';
 
 @Injectable()
 export class LeaveBalanceRepository {
-  constructor(private leavePrismaService: LeavePrismaService) {}
-
+  constructor(private prisma: MultiTenantPrismaService) {}
   async create(tenantSlug: string, data: any) {
-    const client = this.leavePrismaService.getClient(tenantSlug);
+    const client = this.prisma.getClient(tenantSlug);
     
     const query = `
       INSERT INTO leave_balance (
@@ -31,7 +30,7 @@ export class LeaveBalanceRepository {
     orderBy?: any;
   }) {
     const { skip, take, where, orderBy } = params || {};
-    const client = this.leavePrismaService.getClient(tenantSlug);
+    const client = this.prisma.getClient(tenantSlug);
     
     let whereClause = '';
     if (where) {
@@ -105,7 +104,7 @@ export class LeaveBalanceRepository {
   }
 
   async findByEmployee(tenantSlug: string, employeeId: bigint, leavePeriodId?: bigint) {
-    const client = this.leavePrismaService.getClient(tenantSlug);
+    const client = this.prisma.getClient(tenantSlug);
     const periodCondition = leavePeriodId ? `AND lb."leavePeriodId" = ${leavePeriodId}` : '';
     
     const result = await client.$queryRawUnsafe(`
@@ -147,7 +146,7 @@ export class LeaveBalanceRepository {
   }
 
   async findByEmployeeAndType(tenantSlug: string, employeeId: bigint, leaveTypeConfigId: bigint, leavePeriodId?: bigint) {
-    const client = this.leavePrismaService.getClient(tenantSlug);
+    const client = this.prisma.getClient(tenantSlug);
     
     // If leavePeriodId is not provided, get the active period
     let periodId = leavePeriodId;
@@ -176,7 +175,7 @@ export class LeaveBalanceRepository {
   }
 
   async findSpecific(tenantSlug: string, employeeId: bigint, leavePeriodId: bigint, leaveTypeConfigId: bigint) {
-    const client = this.leavePrismaService.getClient(tenantSlug);
+    const client = this.prisma.getClient(tenantSlug);
     
     const query = `
       SELECT 
@@ -197,7 +196,7 @@ export class LeaveBalanceRepository {
   }
 
   async update(tenantSlug: string, id: bigint, data: any) {
-    const client = this.leavePrismaService.getClient(tenantSlug);
+    const client = this.prisma.getClient(tenantSlug);
     
     const updates = [];
     if (data.totalQuota !== undefined) updates.push(`"totalQuota" = ${data.totalQuota}`);
@@ -222,7 +221,7 @@ export class LeaveBalanceRepository {
     leaveTypeConfigId: bigint, 
     data: any
   ) {
-    const client = this.leavePrismaService.getClient(tenantSlug);
+    const client = this.prisma.getClient(tenantSlug);
     
     const updates = [];
     if (data.totalQuota !== undefined) updates.push(`"totalQuota" = ${data.totalQuota}`);
@@ -249,7 +248,7 @@ export class LeaveBalanceRepository {
     leaveTypeConfigId: bigint, 
     data: any
   ) {
-    const client = this.leavePrismaService.getClient(tenantSlug);
+    const client = this.prisma.getClient(tenantSlug);
     
     const totalQuota = data.totalQuota !== undefined ? data.totalQuota : 0;
     const usedQuota = data.usedQuota !== undefined ? data.usedQuota : 0;
@@ -277,7 +276,7 @@ export class LeaveBalanceRepository {
   }
 
   async delete(tenantSlug: string, id: bigint) {
-    const client = this.leavePrismaService.getClient(tenantSlug);
+    const client = this.prisma.getClient(tenantSlug);
     
     const query = `
       DELETE FROM leave_balance
@@ -290,7 +289,7 @@ export class LeaveBalanceRepository {
   }
 
   async count(tenantSlug: string, where?: any) {
-    const client = this.leavePrismaService.getClient(tenantSlug);
+    const client = this.prisma.getClient(tenantSlug);
     
     let whereClause = '';
     if (where) {
@@ -314,7 +313,7 @@ export class LeaveBalanceRepository {
   }
 
   async findActivePeriod(tenantSlug: string) {
-    const client = this.leavePrismaService.getClient(tenantSlug);
+    const client = this.prisma.getClient(tenantSlug);
     const result = await client.$queryRaw`
       SELECT * FROM "leave_period" 
       WHERE "isActive" = true 
@@ -331,7 +330,7 @@ export class LeaveBalanceRepository {
     leaveTypeConfigId: bigint,
     usedDays: number
   ) {
-    const client = this.leavePrismaService.getClient(tenantSlug);
+    const client = this.prisma.getClient(tenantSlug);
     
     const query = `
       UPDATE leave_balance
@@ -354,7 +353,7 @@ export class LeaveBalanceRepository {
     leaveTypeConfigId: bigint,
     customQuota?: number
   ) {
-    const client = this.leavePrismaService.getClient(tenantSlug);
+    const client = this.prisma.getClient(tenantSlug);
     // First find the active period
     const activePeriod = await this.findActivePeriod(tenantSlug);
     if (!activePeriod) {

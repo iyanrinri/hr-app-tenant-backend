@@ -1,7 +1,7 @@
 import { Module } from '@nestjs/common';
 import { DatabaseModule } from '../../database/database.module';
 import { EmployeesModule } from '../employees/employees.module';
-import { LeavePrismaService } from '../../database/leave-prisma.service';
+import { MultiTenantPrismaService } from '@/database/multi-tenant-prisma.service';
 
 // Controllers
 import { LeavePeriodController } from './controllers/leave-period.controller';
@@ -31,7 +31,7 @@ import { LeaveRequestRepository } from './repositories/leave-request.repository'
     LeaveRequestController,
   ],
   providers: [
-    LeavePrismaService,
+    MultiTenantPrismaService,
     LeavePeriodService,
     LeaveTypeService,
     LeaveBalanceService,
@@ -43,7 +43,7 @@ import { LeaveRequestRepository } from './repositories/leave-request.repository'
     LeaveRequestRepository,
   ],
   exports: [
-    LeavePrismaService,
+    MultiTenantPrismaService,
     LeavePeriodService,
     LeaveTypeService,
     LeaveBalanceService,

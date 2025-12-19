@@ -1,12 +1,11 @@
 import { Injectable } from '@nestjs/common';
-import { LeavePrismaService } from '../../../database/leave-prisma.service';
+import { MultiTenantPrismaService } from '../../../database/multi-tenant-prisma.service';
 
 @Injectable()
 export class LeaveTypeRepository {
-  constructor(private leavePrismaService: LeavePrismaService) {}
-
+  constructor(private prisma: MultiTenantPrismaService) {}
   async create(tenantSlug: string, data: any) {
-    const client = this.leavePrismaService.getClient(tenantSlug);
+    const client = this.prisma.getClient(tenantSlug);
     
     // Extract leavePeriodId from nested connect object if needed
     const leavePeriodId = data.leavePeriodId || data.leavePeriod?.connect?.id;
@@ -76,7 +75,7 @@ export class LeaveTypeRepository {
     orderBy?: any;
   }) {
     const { skip, take, where, orderBy } = params || {};
-    const client = this.leavePrismaService.getClient(tenantSlug);
+    const client = this.prisma.getClient(tenantSlug);
     
     // Build WHERE clause
     let whereClause = '';
@@ -147,7 +146,7 @@ export class LeaveTypeRepository {
   }
 
   async findById(tenantSlug: string, id: number) {
-    const client = this.leavePrismaService.getClient(tenantSlug);
+    const client = this.prisma.getClient(tenantSlug);
     
     const query = `
       SELECT 
@@ -163,7 +162,7 @@ export class LeaveTypeRepository {
   }
 
   async findByPeriod(tenantSlug: string, leavePeriodId: bigint, activeOnly = false) {
-    const client = this.leavePrismaService.getClient(tenantSlug);
+    const client = this.prisma.getClient(tenantSlug);
     
     const activeCondition = activeOnly ? 'AND ltc."isActive" = true' : '';
     
@@ -189,7 +188,7 @@ export class LeaveTypeRepository {
   }
 
   async findByTypeAndPeriod(tenantSlug: string, type: string, leavePeriodId: bigint) {
-    const client = this.leavePrismaService.getClient(tenantSlug);
+    const client = this.prisma.getClient(tenantSlug);
     
     const query = `
       SELECT * FROM leave_type_config
@@ -204,7 +203,7 @@ export class LeaveTypeRepository {
   }
 
   async update(tenantSlug: string, id: number, data: any) {
-    const client = this.leavePrismaService.getClient(tenantSlug);
+    const client = this.prisma.getClient(tenantSlug);
     
     const updates = [];
     if (data.type !== undefined) updates.push(`type = '${data.type}'`);
@@ -241,7 +240,7 @@ export class LeaveTypeRepository {
   }
 
   async delete(tenantSlug: string, id: number) {
-    const client = this.leavePrismaService.getClient(tenantSlug);
+    const client = this.prisma.getClient(tenantSlug);
     
     const query = `
       DELETE FROM leave_type_config
@@ -254,7 +253,7 @@ export class LeaveTypeRepository {
   }
 
   async isUsedInBalancesOrRequests(tenantSlug: string, id: number): Promise<boolean> {
-    const client = this.leavePrismaService.getClient(tenantSlug);
+    const client = this.prisma.getClient(tenantSlug);
     
     const query = `
       SELECT 
@@ -269,7 +268,7 @@ export class LeaveTypeRepository {
   }
 
   async count(tenantSlug: string, where?: any) {
-    const client = this.leavePrismaService.getClient(tenantSlug);
+    const client = this.prisma.getClient(tenantSlug);
     
     let whereClause = '';
     if (where) {

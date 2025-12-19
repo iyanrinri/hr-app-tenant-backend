@@ -20,6 +20,13 @@ if (!DATABASE_URL) {
 const baseUrl = new URL(DATABASE_URL);
 
 /**
+ * Migrations that should only run on master database, not tenant databases
+ */
+const MASTER_ONLY_MIGRATIONS = new Set([
+  '20251213222603_init', // Creates tenants and users tables (master DB only)
+]);
+
+/**
  * Get all tenants from master database
  */
 async function getAllTenants(): Promise<any[]> {
@@ -39,47 +46,87 @@ async function getAllTenants(): Promise<any[]> {
 }
 
 /**
+ * Get all migration folders
+ */
+function getAllMigrations(): string[] {
+  const migrationsDir = path.join(__dirname, '../migrations');
+  
+  if (!fs.existsSync(migrationsDir)) {
+    throw new Error(`Migrations directory not found: ${migrationsDir}`);
+  }
+
+  const entries = fs.readdirSync(migrationsDir, { withFileTypes: true });
+  
+  // Filter only directories and sort by name (timestamp prefix ensures order)
+  const migrations = entries
+    .filter(entry => entry.isDirectory())
+    .map(entry => entry.name)
+    .sort();
+
+  return migrations;
+}
+
+/**
  * Read migration SQL file
  */
-function getMigrationSQL(migrationName?: string): string {
-  // Default to leave tables migration if not specified
-  const migration = migrationName || '20251218_create_leave_tables';
-  
+function getMigrationSQL(migrationName: string): string {
   const migrationPath = path.join(
     __dirname,
-    `../migrations/${migration}/migration.sql`
+    `../migrations/${migrationName}/migration.sql`
   );
   
   if (!fs.existsSync(migrationPath)) {
     throw new Error(`Migration file not found: ${migrationPath}`);
   }
 
-  console.log(`📄 Reading migration: ${migration}`);
   return fs.readFileSync(migrationPath, 'utf-8');
 }
 
 /**
  * Parse SQL statements from migration file
- * Handles multi-line statements and comments properly
+ * Handles multi-line statements, comments, and dollar-quoted strings properly
  */
 function parseSQLStatements(sql: string): string[] {
   const statements: string[] = [];
   let currentStatement = '';
+  let inDollarQuote = false;
+  let dollarQuoteTag = '';
 
   const lines = sql.split('\n');
 
   for (const line of lines) {
     const trimmedLine = line.trim();
 
-    // Skip empty lines and comments
-    if (!trimmedLine || trimmedLine.startsWith('--')) {
+    // Skip empty lines when not in dollar quote
+    if (!inDollarQuote && !trimmedLine) {
       continue;
     }
 
-    currentStatement += ' ' + trimmedLine;
+    // Skip comment lines when not in dollar quote
+    if (!inDollarQuote && trimmedLine.startsWith('--')) {
+      continue;
+    }
 
-    // If line ends with semicolon, it's the end of a statement
-    if (trimmedLine.endsWith(';')) {
+    // Check for dollar-quoted strings (e.g., $$ or $tag$)
+    const dollarMatches = line.match(/\$(\w*)\$/g);
+    if (dollarMatches) {
+      for (const match of dollarMatches) {
+        if (!inDollarQuote) {
+          // Start of dollar quote
+          inDollarQuote = true;
+          dollarQuoteTag = match;
+        } else if (match === dollarQuoteTag) {
+          // End of dollar quote
+          inDollarQuote = false;
+          dollarQuoteTag = '';
+        }
+      }
+    }
+
+    currentStatement += (currentStatement ? '\n' : '') + line;
+
+    // If line ends with semicolon and we're not in a dollar quote, it's the end of a statement
+    if (!inDollarQuote && trimmedLine.endsWith(';')) {
       const statement = currentStatement
         .trim()
         .replace(/;$/, '') // Remove trailing semicolon
@@ -102,10 +149,68 @@ function parseSQLStatements(sql: string): string[] {
 }
 
 /**
+ * Check if migration has already been executed for this tenant
+ */
+async function isMigrationExecuted(
+  pool: Pool,
+  migrationName: string
+): Promise<boolean> {
+  try {
+    const result = await pool.query(
+      'SELECT success FROM migrations_log WHERE migration_name = $1',
+      [migrationName]
+    );
+    
+    // Migration was executed and successful
+    if (result.rows.length > 0 && result.rows[0].success) {
+      return true;
+    }
+    
+    return false;
+  } catch (error: any) {
+    // If migrations_log table doesn't exist yet, migration hasn't been executed
+    if (error.code === '42P01') { // undefined_table
+      return false;
+    }
+    throw error;
+  }
+}
+
+/**
+ * Record migration execution in migrations_log
+ */
+async function recordMigration(
+  pool: Pool,
+  migrationName: string,
+  success: boolean,
+  errorMessage?: string
+): Promise<void> {
+  try {
+    await pool.query(
+      `INSERT INTO migrations_log (migration_name, success, error_message) 
+       VALUES ($1, $2, $3)
+       ON CONFLICT (migration_name) 
+       DO UPDATE SET 
+         executed_at = NOW(),
+         success = $2,
+         error_message = $3`,
+      [migrationName, success, errorMessage || null]
+    );
+  } catch (error: any) {
+    // If migrations_log doesn't exist, skip recording (it will be created by its own migration)
+    if (error.code === '42P01') {
+      return;
+    }
+    throw error;
+  }
+}
+
+/**
  * Run migration for a specific tenant
  */
 async function runMigrationForTenant(
   tenantSlug: string,
+  migrationName: string,
   migrationSQL: string
 ): Promise<boolean> {
   const tenantDbUrl = new URL(baseUrl.toString());
@@ -116,35 +221,51 @@ async function runMigrationForTenant(
   });
 
   try {
-    console.log(`🔄 Running migration for tenant: ${tenantSlug}...`);
+    // Skip if this is a master-only migration
+    if (MASTER_ONLY_MIGRATIONS.has(migrationName)) {
+      console.log(`   ⏭️  ${migrationName} (master-only, skipped)`);
+      return true;
+    }
+
+    // Check if migration already executed
+    const alreadyExecuted = await isMigrationExecuted(pool, migrationName);
+    if (alreadyExecuted) {
+      console.log(`   ⏭️  ${migrationName} (already executed)`);
+      return true;
+    }
+
+    console.log(`   🔄 ${migrationName}...`);
     
     // Parse SQL statements properly
     const statements = parseSQLStatements(migrationSQL);
 
-    console.log(`   📝 Found ${statements.length} SQL statements...`);
-
     for (let i = 0; i < statements.length; i++) {
       const statement = statements[i];
       try {
-        console.log(`   ⏳ Executing [${i + 1}/${statements.length}]...`);
         await pool.query(statement);
-        console.log(`   ✓ [${i + 1}/${statements.length}] executed`);
       } catch (error: any) {
         // Ignore "already exists" errors
-        if (error.code === '42P07' || error.message?.includes('already exists')) {
-          console.log(`   ⚠️  [${i + 1}/${statements.length}] Already exists (skipped)`);
+        if (
+          error.code === '42P07' || // relation already exists
+          error.code === '42710' || // object already exists  
+          error.message?.includes('already exists')
+        ) {
           continue;
         }
         throw error;
       }
     }
 
-    console.log(`✅ Migration completed for tenant: ${tenantSlug}\n`);
+    // Record successful migration
+    await recordMigration(pool, migrationName, true);
+
+    console.log(`   ✅ ${migrationName} completed`);
     return true;
   } catch (error: any) {
-    console.error(`❌ Migration failed for tenant: ${tenantSlug}`);
-    console.error(`   Error: ${error.message}`);
-    console.error(`   Code: ${error.code}`);
+    // Record failed migration
+    await recordMigration(pool, migrationName, false, error.message);
+    
+    console.error(`   ❌ ${migrationName} failed: ${error.message}`);
     return false;
   } finally {
     await pool.end();
@@ -158,13 +279,21 @@ async function main() {
   try {
     console.log('🚀 Starting migration runner...\n');
 
-    // Get migration name from command line argument
-    const migrationName = process.argv[2];
+    // Get migration name from command line argument (optional)
+    const specificMigration = process.argv[2];
     
-    if (migrationName) {
-      console.log(`📦 Migration: ${migrationName}\n`);
+    let migrations: string[];
+    
+    if (specificMigration) {
+      // Run specific migration
+      console.log(`📦 Running specific migration: ${specificMigration}\n`);
+      migrations = [specificMigration];
     } else {
-      console.log(`📦 Migration: 20251218_create_leave_tables (default)\n`);
+      // Run all migrations
+      migrations = getAllMigrations();
+      console.log(`📦 Found ${migrations.length} migrations to run:\n`);
+      migrations.forEach((m, i) => console.log(`   ${i + 1}. ${m}`));
+      console.log();
     }
 
     // Get all tenants
@@ -175,29 +304,44 @@ async function main() {
       process.exit(0);
     }
 
-    // Read migration SQL
-    const migrationSQL = getMigrationSQL(migrationName);
+    console.log();
 
-    // Run migration for each tenant
-    let successCount = 0;
-    let failureCount = 0;
+    // Run migrations for each tenant
+    let totalSuccess = 0;
+    let totalFailed = 0;
 
     for (const tenant of tenants) {
-      const success = await runMigrationForTenant(tenant.slug, migrationSQL);
-      if (success) {
-        successCount++;
-      } else {
-        failureCount++;
+      console.log(`\n📍 Tenant: ${tenant.slug} (${tenant.name})`);
+      
+      for (const migrationName of migrations) {
+        try {
+          const migrationSQL = getMigrationSQL(migrationName);
+          const success = await runMigrationForTenant(
+            tenant.slug,
+            migrationName,
+            migrationSQL
+          );
+          
+          if (success) {
+            totalSuccess++;
+          } else {
+            totalFailed++;
+          }
+        } catch (error: any) {
+          console.error(`   ❌ ${migrationName}: ${error.message}`);
+          totalFailed++;
+        }
       }
     }
 
     console.log('\n' + '='.repeat(60));
     console.log(`📊 Migration Results:`);
-    console.log(`✅ Successful: ${successCount}/${tenants.length}`);
-    console.log(`❌ Failed: ${failureCount}/${tenants.length}`);
+    console.log(`✅ Successful: ${totalSuccess}`);
+    console.log(`❌ Failed: ${totalFailed}`);
     console.log('='.repeat(60));
 
-    if (failureCount > 0) {
+    if (totalFailed > 0) {
+      console.log('\n⚠️  Some migrations failed. Check errors above.');
       process.exit(1);
     }
 

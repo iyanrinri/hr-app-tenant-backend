@@ -4,20 +4,20 @@ import { PrismaPg } from '@prisma/adapter-pg';
 import { Pool } from 'pg';
 
 @Injectable()
-export class LeavePrismaService {
+export class MultiTenantPrismaService {
   private clients: Map<string, any> = new Map();
 
   getClient(tenantSlug: string): any {
     if (!this.clients.has(tenantSlug)) {
       try {
         const databaseUrl = this.buildDatabaseUrl(tenantSlug);
-        console.log(`[LeavePrisma] Creating client for tenant: ${tenantSlug}`);
+        console.log(`[MultiTenantPrisma] Creating client for tenant: ${tenantSlug}`);
         const pool = new Pool({ connectionString: databaseUrl });
         const adapter = new PrismaPg(pool);
         const prismaClient = new PrismaClient({ adapter });
         this.clients.set(tenantSlug, prismaClient);
       } catch (error) {
-        console.error(`[LeavePrisma] Failed to create client for ${tenantSlug}:`, error);
+        console.error(`[MultiTenantPrisma] Failed to create client for ${tenantSlug}:`, error);
         throw error;
       }
     }

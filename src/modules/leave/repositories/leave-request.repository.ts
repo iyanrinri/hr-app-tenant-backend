@@ -1,12 +1,11 @@
 import { Injectable } from '@nestjs/common';
-import { LeavePrismaService } from '../../../database/leave-prisma.service';
+import { MultiTenantPrismaService } from '../../../database/multi-tenant-prisma.service'; 
 
 @Injectable()
 export class LeaveRequestRepository {
-  constructor(private leavePrismaService: LeavePrismaService) {}
-
+  constructor(private prisma: MultiTenantPrismaService) {}
   async create(tenantSlug: string, data: any) {
-    const client = this.leavePrismaService.getClient(tenantSlug);
+    const client = this.prisma.getClient(tenantSlug);
     
     // Extract IDs from nested connect objects if needed
     const employeeId = data.employeeId || data.employee?.connect?.id;
@@ -64,7 +63,7 @@ export class LeaveRequestRepository {
     orderBy?: any;
   }) {
     const { skip, take, where, orderBy } = params || {};
-    const client = this.leavePrismaService.getClient(tenantSlug);
+    const client = this.prisma.getClient(tenantSlug);
     
     let whereClause = '';
     if (where) {
@@ -138,7 +137,7 @@ export class LeaveRequestRepository {
   }
 
   async findById(tenantSlug: string, id: bigint) {
-    const client = this.leavePrismaService.getClient(tenantSlug);
+    const client = this.prisma.getClient(tenantSlug);
     
     const query = `
       SELECT 
@@ -163,7 +162,7 @@ export class LeaveRequestRepository {
     status?: string;
   }) {
     const { skip = 0, take = 10, status } = params || {};
-    const client = this.leavePrismaService.getClient(tenantSlug);
+    const client = this.prisma.getClient(tenantSlug);
     
     const statusCondition = status ? `AND lr.status = '${status}'` : '';
     
@@ -198,7 +197,7 @@ export class LeaveRequestRepository {
   }
 
   async findPendingForApprover(tenantSlug: string, approverId: bigint) {
-    const client = this.leavePrismaService.getClient(tenantSlug);
+    const client = this.prisma.getClient(tenantSlug);
     
     const query = `
       SELECT DISTINCT
@@ -249,7 +248,7 @@ export class LeaveRequestRepository {
   }
 
   async findConflicting(tenantSlug: string, employeeId: bigint, startDate: Date, endDate: Date, excludeId?: bigint) {
-    const client = this.leavePrismaService.getClient(tenantSlug);
+    const client = this.prisma.getClient(tenantSlug);
     
     const startDateStr = new Date(startDate).toISOString().split('T')[0];
     const endDateStr = new Date(endDate).toISOString().split('T')[0];
@@ -268,7 +267,7 @@ export class LeaveRequestRepository {
   }
 
   async update(tenantSlug: string, id: bigint, data: any) {
-    const client = this.leavePrismaService.getClient(tenantSlug);
+    const client = this.prisma.getClient(tenantSlug);
     
     const updates = [];
     if (data.status !== undefined) updates.push(`status = '${data.status}'`);
@@ -297,7 +296,7 @@ export class LeaveRequestRepository {
   }
 
   async delete(tenantSlug: string, id: bigint) {
-    const client = this.leavePrismaService.getClient(tenantSlug);
+    const client = this.prisma.getClient(tenantSlug);
     
     const query = `
       DELETE FROM leave_request
@@ -310,7 +309,7 @@ export class LeaveRequestRepository {
   }
 
   async count(tenantSlug: string, where?: any) {
-    const client = this.leavePrismaService.getClient(tenantSlug);
+    const client = this.prisma.getClient(tenantSlug);
     
     let whereClause = '';
     if (where) {
@@ -334,7 +333,7 @@ export class LeaveRequestRepository {
   }
 
   async approveRequest(tenantSlug: string, id: bigint, approverId: bigint, comments?: string, level?: 'MANAGER' | 'HR') {
-    const client = this.leavePrismaService.getClient(tenantSlug);
+    const client = this.prisma.getClient(tenantSlug);
     return client.$transaction(async (tx: any) => {
       // Update the leave request status
       const updateData: any = {
@@ -372,7 +371,7 @@ export class LeaveRequestRepository {
   }
 
   async rejectRequest(tenantSlug: string, id: bigint, approverId: bigint, rejectionReason: string, comments?: string) {
-    const client = this.leavePrismaService.getClient(tenantSlug);
+    const client = this.prisma.getClient(tenantSlug);
     return client.$transaction(async (tx: any) => {
       // Update the leave request status
       const updatedRequest = await tx.leaveRequest.update({
