@@ -1,5 +1,5 @@
 import { Injectable, NotFoundException, BadRequestException, ConflictException } from '@nestjs/common';
-import { AttendancePeriodPrismaService } from '../../../database/attendance-period-prisma.service';
+import { MultiTenantPrismaService } from '@/database/multi-tenant-prisma.service';
 import { CreateAttendancePeriodDto } from '../dto/create-attendance-period.dto';
 import { UpdateAttendancePeriodDto } from '../dto/update-attendance-period.dto';
 import { CreateHolidayDto } from '../dto/create-holiday.dto';
@@ -7,10 +7,10 @@ import { FindAllPeriodsDto } from '../dto/find-all-periods.dto';
 
 @Injectable()
 export class AttendancePeriodService {
-  constructor(private attendancePeriodPrisma: AttendancePeriodPrismaService) {}
+  constructor(private prisma: MultiTenantPrismaService) {}
 
   async create(tenantSlug: string, createDto: CreateAttendancePeriodDto, userId: string) {
-    const client = this.attendancePeriodPrisma.getClient(tenantSlug);
+    const client = this.prisma.getClient(tenantSlug);
     const startDate = new Date(createDto.startDate).toISOString();
     const endDate = new Date(createDto.endDate).toISOString();
 
@@ -56,7 +56,7 @@ export class AttendancePeriodService {
   }
 
   async findAll(tenantSlug: string, query: FindAllPeriodsDto) {
-    const client = this.attendancePeriodPrisma.getClient(tenantSlug);
+    const client = this.prisma.getClient(tenantSlug);
     let whereClause = '';
 
     if (query.search) {
@@ -107,7 +107,7 @@ export class AttendancePeriodService {
   }
 
   async findOne(tenantSlug: string, id: bigint) {
-    const client = this.attendancePeriodPrisma.getClient(tenantSlug);
+    const client = this.prisma.getClient(tenantSlug);
     const query = `SELECT * FROM "attendance_period" WHERE id = ${id}`;
     const result = await client.$queryRawUnsafe(query);
 
@@ -119,7 +119,7 @@ export class AttendancePeriodService {
   }
 
   async update(tenantSlug: string, id: bigint, updateDto: UpdateAttendancePeriodDto) {
-    const client = this.attendancePeriodPrisma.getClient(tenantSlug);
+    const client = this.prisma.getClient(tenantSlug);
     
     const existing = await this.findOne(tenantSlug, id);
     if (!existing) {
@@ -183,7 +183,7 @@ export class AttendancePeriodService {
   }
 
   async remove(tenantSlug: string, id: bigint) {
-    const client = this.attendancePeriodPrisma.getClient(tenantSlug);
+    const client = this.prisma.getClient(tenantSlug);
     
     const existing = await this.findOne(tenantSlug, id);
     if (!existing) {
@@ -197,7 +197,7 @@ export class AttendancePeriodService {
   }
 
   async getActivePeriod(tenantSlug: string) {
-    const client = this.attendancePeriodPrisma.getClient(tenantSlug);
+    const client = this.prisma.getClient(tenantSlug);
     const query = `
       SELECT * FROM "attendance_period"
       WHERE "isActive" = true
@@ -215,7 +215,7 @@ export class AttendancePeriodService {
   }
 
   async createHoliday(tenantSlug: string, createDto: CreateHolidayDto) {
-    const client = this.attendancePeriodPrisma.getClient(tenantSlug);
+    const client = this.prisma.getClient(tenantSlug);
     const holidayDate = new Date(createDto.date).toISOString();
 
     const insertQuery = `
@@ -238,7 +238,7 @@ export class AttendancePeriodService {
   }
 
   async findHolidays(tenantSlug: string, attendancePeriodId?: bigint) {
-    const client = this.attendancePeriodPrisma.getClient(tenantSlug);
+    const client = this.prisma.getClient(tenantSlug);
     
     let whereClause = '';
     if (attendancePeriodId) {
@@ -256,7 +256,7 @@ export class AttendancePeriodService {
   }
 
   async updateHoliday(tenantSlug: string, id: bigint, updateData: Partial<CreateHolidayDto>) {
-    const client = this.attendancePeriodPrisma.getClient(tenantSlug);
+    const client = this.prisma.getClient(tenantSlug);
     
     let updateFields: string[] = [];
     if (updateData.name !== undefined) updateFields.push(`name = '${updateData.name.replace(/'/g, "''")}'`);
@@ -284,7 +284,7 @@ export class AttendancePeriodService {
   }
 
   async deleteHoliday(tenantSlug: string, id: bigint) {
-    const client = this.attendancePeriodPrisma.getClient(tenantSlug);
+    const client = this.prisma.getClient(tenantSlug);
     const deleteQuery = `DELETE FROM "holiday" WHERE id = ${id}`;
     await client.$queryRawUnsafe(deleteQuery);
     return { message: 'Holiday deleted successfully' };
@@ -357,7 +357,7 @@ export class AttendancePeriodService {
     }
 
     // Check if it's a holiday
-    const client = this.attendancePeriodPrisma.getClient(tenantSlug);
+    const client = this.prisma.getClient(tenantSlug);
     const dateStr = date.toISOString().split('T')[0];
     
     let whereClause = `WHERE date::date = '${dateStr}'::date`;

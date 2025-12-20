@@ -5,6 +5,11 @@ import { MicroserviceOptions, Transport } from '@nestjs/microservices';
 import { AppModule } from './app.module';
 import { ValidationExceptionFilter } from './common/filters/validation-exception.filter';
 
+// Global BigInt serialization for JSON
+(BigInt.prototype as any).toJSON = function() {
+  return this.toString();
+};
+
 async function bootstrap() {
   // Create HTTP application
   const app = await NestFactory.create(AppModule);

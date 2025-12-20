@@ -1,5 +1,5 @@
 import { Injectable, BadRequestException, NotFoundException, ForbiddenException } from '@nestjs/common';
-import { AttendancePrismaService } from '../../../database/attendance-prisma.service';
+import { MultiTenantPrismaService } from '@/database/multi-tenant-prisma.service';
 import { AttendancePeriodService } from '../../attendance-period/services/attendance-period.service';
 import { ClockInDto } from '../dto/clock-in.dto';
 import { ClockOutDto } from '../dto/clock-out.dto';

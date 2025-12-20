@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { AttendancePrismaService } from '../../../database/attendance-prisma.service';
+import { MultiTenantPrismaService } from '@/database/multi-tenant-prisma.service';
 
 // Tenant schema types (not available in main @prisma/client)
 export enum AttendanceType {
@@ -16,10 +16,10 @@ export enum AttendanceStatus {
 
 @Injectable()
 export class AttendanceRepository {
-  constructor(private attendancePrisma: AttendancePrismaService) {}
+  constructor(private prisma: MultiTenantPrismaService) {}
 
   async findTodayAttendance(tenantSlug: string, employeeId: bigint, date: Date) {
-    const client = this.attendancePrisma.getClient(tenantSlug);
+    const client = this.prisma.getClient(tenantSlug);
     const dateStr = date.toISOString().split('T')[0];
 
     try {
@@ -48,7 +48,7 @@ export class AttendanceRepository {
   }
 
   async createAttendance(tenantSlug: string, data: any) {
-    const client = this.attendancePrisma.getClient(tenantSlug);
+    const client = this.prisma.getClient(tenantSlug);
     try {
       const columns = Object.keys(data).map(k => `"${k}"`).join(', ');
       const values = Object.values(data).map(v => {
@@ -76,7 +76,7 @@ export class AttendanceRepository {
     where: any;
     data: any;
   }) {
-    const client = this.attendancePrisma.getClient(tenantSlug);
+    const client = this.prisma.getClient(tenantSlug);
     try {
       const setClause = Object.entries(params.data)
         .map(([key, value]) => {
@@ -105,7 +105,7 @@ export class AttendanceRepository {
   }
 
   async createAttendanceLog(tenantSlug: string, data: any) {
-    const client = this.attendancePrisma.getClient(tenantSlug);
+    const client = this.prisma.getClient(tenantSlug);
     try {
       const columns = Object.keys(data).map(k => `"${k}"`).join(', ');
       const values = Object.values(data).map(v => {
@@ -135,7 +135,7 @@ export class AttendanceRepository {
     where?: any;
     orderBy?: any;
   }) {
-    const client = this.attendancePrisma.getClient(tenantSlug);
+    const client = this.prisma.getClient(tenantSlug);
     try {
       let whereClause = '';
       if (params.where) {
@@ -169,7 +169,7 @@ export class AttendanceRepository {
   }
 
   async countAttendance(tenantSlug: string, where?: any) {
-    const client = this.attendancePrisma.getClient(tenantSlug);
+    const client = this.prisma.getClient(tenantSlug);
     try {
       let whereClause = '';
       if (where) {
@@ -196,7 +196,7 @@ export class AttendanceRepository {
     orderBy?: any;
     take?: number;
   }) {
-    const client = this.attendancePrisma.getClient(tenantSlug);
+    const client = this.prisma.getClient(tenantSlug);
     try {
       let whereClause = '';
       if (params.where) {
@@ -224,7 +224,7 @@ export class AttendanceRepository {
   }
 
   async getLatestLog(tenantSlug: string, employeeId: bigint, date: Date, type?: AttendanceType) {
-    const client = this.attendancePrisma.getClient(tenantSlug);
+    const client = this.prisma.getClient(tenantSlug);
     const dateStr = date.toISOString().split('T')[0];
 
     try {
@@ -245,7 +245,7 @@ export class AttendanceRepository {
   }
 
   async findAttendanceWithLogs(tenantSlug: string, attendanceId: bigint) {
-    const client = this.attendancePrisma.getClient(tenantSlug);
+    const client = this.prisma.getClient(tenantSlug);
     try {
       const query = `
         SELECT * FROM "attendances"
@@ -260,7 +260,7 @@ export class AttendanceRepository {
   }
 
   async getAttendanceStats(tenantSlug: string, employeeId: bigint, startDate: Date, endDate: Date) {
-    const client = this.attendancePrisma.getClient(tenantSlug);
+    const client = this.prisma.getClient(tenantSlug);
     
     if (!client) {
       throw new Error(`Failed to get Prisma client for tenant: ${tenantSlug}`);
@@ -310,8 +310,8 @@ export class AttendanceRepository {
   }
 
   async findEmployeeById(tenantSlug: string, employeeId: number) {
-    const prisma = this.attendancePrisma.getClient(tenantSlug);
-    const client = this.attendancePrisma.getClient(tenantSlug);
+    const prisma = this.prisma.getClient(tenantSlug);
+    const client = this.prisma.getClient(tenantSlug);
     try {
       const query = `
         SELECT e.id, e."firstName", e."lastName", e.position, e.department, u.email
@@ -328,7 +328,7 @@ export class AttendanceRepository {
   }
 
   async getDashboardData(tenantSlug: string, date: Date, attendancePeriodId: number) {
-    const client = this.attendancePrisma.getClient(tenantSlug);
+    const client = this.prisma.getClient(tenantSlug);
     const dateStr = date.toISOString().split('T')[0];
 
     try {
@@ -402,7 +402,7 @@ export class AttendanceRepository {
   }
 
   async getEmployeeAttendanceToday(tenantSlug: string, employeeId: number, date: Date) {
-    const client = this.attendancePrisma.getClient(tenantSlug);
+    const client = this.prisma.getClient(tenantSlug);
     const dateStr = date.toISOString().split('T')[0];
 
     try {

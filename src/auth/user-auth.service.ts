@@ -5,13 +5,13 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
-import { EmployeePrismaService } from '../database/employee-prisma.service';
+import { MultiTenantPrismaService } from '@/database/multi-tenant-prisma.service';
 import * as bcrypt from 'bcrypt';
 
 @Injectable()
 export class UserAuthService {
   constructor(
-    private employeePrisma: EmployeePrismaService,
+    private prisma: MultiTenantPrismaService,
     private jwtService: JwtService,
   ) {}
 
@@ -20,7 +20,7 @@ export class UserAuthService {
    */
   async loginUser(tenantSlug: string, email: string, password: string) {
     try {
-      const client = this.employeePrisma.getClient(tenantSlug);
+      const client = this.prisma.getClient(tenantSlug);
 
       // Get user from tenant database
       const userQuery = `SELECT * FROM "users" WHERE email = '${email}' AND "deletedAt" IS NULL`;
@@ -87,7 +87,7 @@ export class UserAuthService {
    */
   async getUserProfile(tenantSlug: string, userId: number) {
     try {
-      const client = this.employeePrisma.getClient(tenantSlug);
+      const client = this.prisma.getClient(tenantSlug);
 
       const userQuery = `SELECT * FROM "users" WHERE id = ${userId} AND "deletedAt" IS NULL`;
       const users = await client.$queryRawUnsafe(userQuery);
@@ -133,7 +133,7 @@ export class UserAuthService {
     newPassword: string,
   ) {
     try {
-      const client = this.employeePrisma.getClient(tenantSlug);
+      const client = this.prisma.getClient(tenantSlug);
 
       // Get user
       const userQuery = `SELECT * FROM "users" WHERE id = ${userId} AND "deletedAt" IS NULL`;

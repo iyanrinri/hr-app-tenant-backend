@@ -14,6 +14,7 @@ import { AttendanceModule } from './modules/attendance/attendance.module';
 import { LeaveModule } from './modules/leave/leave.module';
 import { OvertimeModule } from './modules/overtime/overtime.module';
 import { SalaryModule } from './modules/salary/salary.module';
+import { PayrollModule } from './modules/payroll/payroll.module';
 import { KafkaModule } from './common/modules/kafka.module';
 
 @Module({
@@ -35,6 +36,7 @@ import { KafkaModule } from './common/modules/kafka.module';
     LeaveModule,
     OvertimeModule,
     SalaryModule,
+    PayrollModule,
   ],
   controllers: [AppController],
   providers: [AppService],

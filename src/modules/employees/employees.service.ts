@@ -3,8 +3,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { EmployeePrismaService } from '../../database/employee-prisma.service';
-import { AuthService } from '../../auth/auth.service';
+import { MultiTenantPrismaService } from '@/database/multi-tenant-prisma.service';
 import {
   CreateEmployeeDto,
   UpdateEmployeeDto,
@@ -15,11 +14,12 @@ import {
   OrganizationTreeDto,
   SetManagerDto,
 } from './dto';
+import { AuthService } from '@/auth/auth.service';
 
 @Injectable()
 export class EmployeesService {
   constructor(
-    private employeePrisma: EmployeePrismaService,
+    private prisma: MultiTenantPrismaService,
     private authService: AuthService,
   ) {}
 
@@ -30,7 +30,7 @@ export class EmployeesService {
     tenantSlug: string,
     createEmployeeDto: CreateEmployeeDto,
   ) {
-    const client = this.employeePrisma.getClient(tenantSlug);
+    const client = this.prisma.getClient(tenantSlug);
     const { baseSalary, allowances = 0, ...employeeData } = createEmployeeDto;
 
     // Check if user with this email already exists
@@ -123,7 +123,7 @@ export class EmployeesService {
     tenantSlug: string,
     findAllEmployeesDto: FindAllEmployeesDto,
   ): Promise<PaginatedEmployeeResponseDto> {
-    const client = this.employeePrisma.getClient(tenantSlug);
+    const client = this.prisma.getClient(tenantSlug);
     const {
       page = 1,
       limit = 10,
@@ -205,7 +205,7 @@ export class EmployeesService {
     tenantSlug: string,
     employeeId: string,
   ): Promise<EmployeeProfileDto> {
-    const client = this.employeePrisma.getClient(tenantSlug);
+    const client = this.prisma.getClient(tenantSlug);
 
     const query = `
       SELECT e.*, u.id as user_id, u.email, u.role, u."isActive" as user_is_active, u."createdAt" as user_created_at, u."updatedAt" as user_updated_at,
@@ -228,7 +228,7 @@ export class EmployeesService {
    * Find employee by user ID
    */
   async findByUserId(tenantSlug: string, userId: bigint) {
-    const client = this.employeePrisma.getClient(tenantSlug);
+    const client = this.prisma.getClient(tenantSlug);
 
     const employees = await client.$queryRaw`
       SELECT * FROM "employees" WHERE "userId" = ${userId} AND "deletedAt" IS NULL
@@ -252,7 +252,7 @@ export class EmployeesService {
     approvedBy?: number,
     userRole?: string,
   ): Promise<EmployeeProfileDto> {
-    const client = this.employeePrisma.getClient(tenantSlug);
+    const client = this.prisma.getClient(tenantSlug);
 
     // Check email update authorization
     if (updateEmployeeDto.email !== undefined) {
@@ -383,7 +383,7 @@ export class EmployeesService {
    * Soft delete employee
    */
   async deleteEmployee(tenantSlug: string, employeeId: string) {
-    const client = this.employeePrisma.getClient(tenantSlug);
+    const client = this.prisma.getClient(tenantSlug);
 
     const employees = await client.$queryRaw`
       SELECT * FROM "employees" WHERE id = ${Number(employeeId)} AND "deletedAt" IS NULL
@@ -404,7 +404,7 @@ export class EmployeesService {
    * Restore a soft-deleted employee
    */
   async restoreEmployee(tenantSlug: string, employeeId: string) {
-    const client = this.employeePrisma.getClient(tenantSlug);
+    const client = this.prisma.getClient(tenantSlug);
 
     const employees = await client.$queryRaw`
       SELECT * FROM "employees" WHERE id = ${Number(employeeId)} AND "deletedAt" IS NOT NULL
@@ -429,7 +429,7 @@ export class EmployeesService {
     employeeId: string,
     setManagerDto: SetManagerDto,
   ) {
-    const client = this.employeePrisma.getClient(tenantSlug);
+    const client = this.prisma.getClient(tenantSlug);
 
     const employees = await client.$queryRaw`
       SELECT * FROM "employees" WHERE id = ${Number(employeeId)} AND "deletedAt" IS NULL
@@ -464,7 +464,7 @@ export class EmployeesService {
    * Get employee's subordinates (direct reports)
    */
   async getSubordinates(tenantSlug: string, employeeId: string) {
-    const client = this.employeePrisma.getClient(tenantSlug);
+    const client = this.prisma.getClient(tenantSlug);
 
     const employees = await client.$queryRaw`
       SELECT * FROM "employees" WHERE id = ${Number(employeeId)} AND "deletedAt" IS NULL
@@ -488,7 +488,7 @@ export class EmployeesService {
     tenantSlug: string,
     employeeId: string,
   ): Promise<OrganizationTreeDto> {
-    const client = this.employeePrisma.getClient(tenantSlug);
+    const client = this.prisma.getClient(tenantSlug);
 
     const employees = await client.$queryRaw`
       SELECT * FROM "employees" WHERE id = ${Number(employeeId)} AND "deletedAt" IS NULL
@@ -582,7 +582,7 @@ export class EmployeesService {
    * Get management chain (manager -> manager's manager -> etc)
    */
   async getManagementChain(tenantSlug: string, employeeId: string) {
-    const client = this.employeePrisma.getClient(tenantSlug);
+    const client = this.prisma.getClient(tenantSlug);
 
     const chain: EmployeeProfileDto[] = [];
     let currentId = Number(employeeId);
@@ -697,7 +697,7 @@ export class EmployeesService {
    * Get employee profile with all details
    */
   async getProfile(tenantSlug: string, employeeId: number) {
-    const client = this.employeePrisma.getClient(tenantSlug);
+    const client = this.prisma.getClient(tenantSlug);
 
     try {
       const query = `
@@ -730,7 +730,7 @@ export class EmployeesService {
    * Update employee profile
    */
   async updateProfile(tenantSlug: string, employeeId: number, updateData: any) {
-    const client = this.employeePrisma.getClient(tenantSlug);
+    const client = this.prisma.getClient(tenantSlug);
 
     try {
       // First verify employee exists
@@ -795,7 +795,7 @@ export class EmployeesService {
    * Upload profile picture
    */
   async uploadProfilePicture(tenantSlug: string, employeeId: number, filename: string) {
-    const client = this.employeePrisma.getClient(tenantSlug);
+    const client = this.prisma.getClient(tenantSlug);
 
     try {
       // First verify employee exists
@@ -831,7 +831,7 @@ export class EmployeesService {
    * Delete profile picture
    */
   async deleteProfilePicture(tenantSlug: string, employeeId: number) {
-    const client = this.employeePrisma.getClient(tenantSlug);
+    const client = this.prisma.getClient(tenantSlug);
 
     try {
       // First verify employee exists

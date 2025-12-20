@@ -1,11 +1,10 @@
 import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
-import { AttendancePeriodPrismaService } from '../../../database/attendance-period-prisma.service';
-
+import { MultiTenantPrismaService } from '@/database/multi-tenant-prisma.service';
 @Injectable()
 export class AttendancePeriodScheduler implements OnModuleInit {
   private readonly logger = new Logger(AttendancePeriodScheduler.name);
 
-  constructor(private attendancePeriodPrisma: AttendancePeriodPrismaService) {}
+  constructor(private prisma: MultiTenantPrismaService) {}
 
   async onModuleInit() {
     this.logger.log('🚀 AttendancePeriodScheduler initialized');
@@ -33,7 +32,7 @@ export class AttendancePeriodScheduler implements OnModuleInit {
     this.logger.log(`🔄 Checking for attendance period transitions in tenant: ${tenantSlug}...`);
     
     try {
-      const client = this.attendancePeriodPrisma.getClient(tenantSlug);
+      const client = this.prisma.getClient(tenantSlug);
       const now = new Date().toISOString();
       
       // Find and deactivate periods that should not be active
@@ -77,7 +76,7 @@ export class AttendancePeriodScheduler implements OnModuleInit {
   // Get statistics about period status for a tenant
   async getPeriodStatusStats(tenantSlug: string) {
     try {
-      const client = this.attendancePeriodPrisma.getClient(tenantSlug);
+      const client = this.prisma.getClient(tenantSlug);
       const now = new Date().toISOString();
       
       const statsQuery = `

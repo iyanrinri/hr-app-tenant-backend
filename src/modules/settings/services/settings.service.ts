@@ -1,14 +1,14 @@
 import { Injectable, NotFoundException, ConflictException, BadRequestException } from '@nestjs/common';
-import { SettingsPrismaService } from '../../../database/settings-prisma.service';
+import { MultiTenantPrismaService } from '@/database/multi-tenant-prisma.service';
 import { CreateSettingDto, SettingDataType, SettingCategory } from '../dto/create-setting.dto';
 import { UpdateSettingDto } from '../dto/update-setting.dto';
 import { SettingsFilterDto } from '../dto/settings-filter.dto';
 
 @Injectable()
 export class SettingsService {
-  constructor(private settingsPrisma: SettingsPrismaService) {
-    if (!this.settingsPrisma) {
-      console.error('[Settings Service] SettingsPrismaService is not injected!');
+  constructor(private prisma: MultiTenantPrismaService) {
+    if (!this.prisma) {
+      console.error('[Settings Service] MultiTenantPrismaService is not injected!');
     }
   }
 
@@ -21,14 +21,14 @@ export class SettingsService {
       throw error;
     }
 
-    if (!this.settingsPrisma) {
+    if (!this.prisma) {
       const error = new BadRequestException('SettingsPrismaService is not available');
       console.error('[Settings Service getClient] Error:', error.message);
       throw error;
     }
 
-    console.log('[Settings Service getClient] Calling settingsPrisma.getClient...');
-    const client = this.settingsPrisma.getClient(tenantId);
+    console.log('[Settings Service getClient] Calling prisma.getClient...');
+    const client = this.prisma.getClient(tenantId);
     
     if (!client) {
       const error = new BadRequestException('Failed to get database client for tenant');
