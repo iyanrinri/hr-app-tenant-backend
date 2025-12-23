@@ -5,7 +5,8 @@ import { SalaryService } from '../../salary/services/salary.service';
 import { OvertimeRequestService } from '../../overtime/services/overtime-request.service';
 import { SettingsService } from '../../settings/services/settings.service';
 import { AttendanceService } from '../../attendance/services/attendance.service';
-import { CreatePayrollDto, ProcessPayrollDto } from '../dto/create-payroll.dto';
+import { EmployeesService } from '../../employees/employees.service';
+import { CreatePayrollDto, ProcessPayrollDto, BulkGeneratePayrollDto } from '../dto/create-payroll.dto';
 import { PayrollQueryDto, PayrollStatus } from '../dto/payroll-query.dto';
 import { PayrollDto, PayrollListResponseDto } from '../dto/payroll-response.dto';
 import { OvertimeStatus } from '../../overtime/dto/update-overtime-request.dto';
@@ -19,6 +20,7 @@ export class PayrollService {
     private overtimeRequestService: OvertimeRequestService,
     private settingsService: SettingsService,
     private attendanceService: AttendanceService,
+    private employeesService: EmployeesService,
   ) {}
 
   async createPayroll(tenantSlug: string, createPayrollDto: CreatePayrollDto, userId: string): Promise<PayrollDto> {
@@ -28,6 +30,7 @@ export class PayrollService {
       periodEnd,
       deductions = '0',
       bonuses = '0',
+      bonusPercentage = 0,
       overtimeRequestIds = [],
     } = createPayrollDto;
 
@@ -59,7 +62,7 @@ export class PayrollService {
       new Date(periodEnd),
     );
 
-    // Calculate overtime pay
+    // Calculate overtime pay (automatic)
     const overtimeCalculation = await this.calculateOvertimePay(
       tenantSlug, 
       employeeId,
@@ -68,11 +71,15 @@ export class PayrollService {
       overtimeRequestIds,
     );
 
-    // Calculate gross and net salary
+    // Calculate bonus from percentage if provided
     const baseSalaryDecimal = new Prisma.Decimal(currentSalary.baseSalary);
+    const bonusFromPercentage = bonusPercentage > 0 
+      ? baseSalaryDecimal.times(bonusPercentage).dividedBy(100)
+      : new Prisma.Decimal(0);
+    
     const overtimePayDecimal = new Prisma.Decimal(overtimeCalculation.totalPay);
     const deductionsDecimal = new Prisma.Decimal(deductions);
-    const bonusesDecimal = new Prisma.Decimal(bonuses);
+    const bonusesDecimal = new Prisma.Decimal(bonuses).plus(bonusFromPercentage);
 
     const grossSalary = baseSalaryDecimal
       .plus(overtimePayDecimal)
@@ -193,6 +200,170 @@ export class PayrollService {
     return this.payrollRepository.getPayrollSummary(tenantSlug, employeeId);
   }
 
+  async bulkGeneratePayroll(
+    tenantSlug: string,
+    bulkGenerateDto: BulkGeneratePayrollDto,
+    userId: string,
+  ): Promise<{
+    generated: number;
+    failed: Array<{ employeeId: string; reason: string }>;
+    payrolls: PayrollDto[];
+  }> {
+    const {
+      periodStart,
+      periodEnd,
+      bonusPercentage = 0,
+      deductions = {},
+      employeeIds,
+    } = bulkGenerateDto;
+
+    const failed: Array<{ employeeId: string; reason: string }> = [];
+    const payrolls: PayrollDto[] = [];
+
+    // Get all active employees (or specific ones if provided)
+    // For now, we'll use a simple approach - in production, fetch from employee repository
+    const targetEmployeeIds = employeeIds && employeeIds.length > 0 
+      ? employeeIds 
+      : await this.getAllActiveEmployeeIds(tenantSlug);
+
+    console.log('🔍 [BulkGenerate] Target employee IDs:', targetEmployeeIds);
+    console.log('🔍 [BulkGenerate] Period:', periodStart, 'to', periodEnd);
+    console.log('🔍 [BulkGenerate] Bonus %:', bonusPercentage);
+
+    for (const employeeId of targetEmployeeIds) {
+      try {
+        // Check if payroll already exists
+        const existingPayroll = await this.payrollRepository.findByEmployeeAndPeriod(
+          tenantSlug,
+          employeeId,
+          new Date(periodStart),
+          new Date(periodEnd),
+        );
+
+        if (existingPayroll) {
+          failed.push({
+            employeeId,
+            reason: 'Payroll already exists for this period',
+          });
+          continue;
+        }
+
+        // Get employee's current salary
+        const currentSalary = await this.salaryService.getCurrentSalary(
+          tenantSlug,
+          parseInt(employeeId),
+        );
+
+        if (!currentSalary) {
+          failed.push({
+            employeeId,
+            reason: 'No salary record found',
+          });
+          continue;
+        }
+
+        // Calculate regular hours
+        const regularHours = await this.calculateRegularHours(
+          tenantSlug,
+          employeeId,
+          new Date(periodStart),
+          new Date(periodEnd),
+        );
+
+        // Calculate overtime pay (automatic)
+        const overtimeCalculation = await this.calculateOvertimePay(
+          tenantSlug,
+          employeeId,
+          new Date(periodStart),
+          new Date(periodEnd),
+          [], // Auto-fetch approved overtime requests in the period
+        );
+
+        // Calculate bonuses
+        const baseSalaryDecimal = new Prisma.Decimal(currentSalary.baseSalary);
+        const bonusFromPercentage = bonusPercentage > 0
+          ? baseSalaryDecimal.times(bonusPercentage).dividedBy(100)
+          : new Prisma.Decimal(0);
+
+        const overtimePayDecimal = new Prisma.Decimal(overtimeCalculation.totalPay);
+        
+        // Get employee-specific deduction (manual)
+        const employeeDeduction = deductions[employeeId] || '0';
+        const deductionsDecimal = new Prisma.Decimal(employeeDeduction);
+        
+        const bonusesDecimal = bonusFromPercentage;
+
+        const grossSalary = baseSalaryDecimal
+          .plus(overtimePayDecimal)
+          .plus(bonusesDecimal);
+
+        const netSalary = grossSalary.minus(deductionsDecimal);
+
+        // Create payroll
+        const payrollData = {
+          employeeId: BigInt(employeeId),
+          periodStart: new Date(periodStart),
+          periodEnd: new Date(periodEnd),
+          baseSalary: baseSalaryDecimal,
+          overtimePay: overtimePayDecimal,
+          deductions: deductionsDecimal,
+          bonuses: bonusesDecimal,
+          grossSalary,
+          netSalary,
+          overtimeHours: new Prisma.Decimal(overtimeCalculation.totalHours),
+          regularHours: new Prisma.Decimal(regularHours),
+          employee: {
+            connect: { id: BigInt(employeeId) },
+          },
+        };
+
+        const payroll = await this.payrollRepository.create(tenantSlug, payrollData);
+        payrolls.push(this.transformPayrollToDto(payroll));
+      } catch (error) {
+        failed.push({
+          employeeId,
+          reason: error.message || 'Unknown error',
+        });
+      }
+    }
+
+    return {
+      generated: payrolls.length,
+      failed,
+      payrolls,
+    };
+  }
+
+  private async getAllActiveEmployeeIds(tenantSlug: string): Promise<string[]> {
+    try {
+      console.log('🔍 [getAllActiveEmployeeIds] Fetching employees for tenant:', tenantSlug);
+      
+      // Fetch all active employees from employee service
+      const response = await this.employeesService.getEmployees(tenantSlug, {
+        isActive: true,
+        page: 1,
+        limit: 1000, // Get all employees at once
+      });
+      
+      console.log('🔍 [getAllActiveEmployeeIds] Response:', {
+        total: response.total,
+        count: response.data?.length,
+        employees: response.data?.map(e => ({ id: e.id, name: `${e.firstName} ${e.lastName}` }))
+      });
+      
+      // Handle empty response or no data
+      if (!response.data || response.data.length === 0) {
+        console.warn('⚠️ [getAllActiveEmployeeIds] No active employees found');
+        return [];
+      }
+      
+      return response.data.map(emp => emp.id?.toString() || String(emp.id));
+    } catch (error) {
+      console.error('❌ [getAllActiveEmployeeIds] Failed to fetch active employees:', error);
+      throw new BadRequestException(`Failed to fetch active employees: ${error.message}`);
+    }
+  }
+
   private async calculateRegularHours(  
     tenantSlug: string,
     employeeId: string,
@@ -224,12 +395,54 @@ export class PayrollService {
     periodEnd: Date,
     overtimeRequestIds: string[] = [],
   ): Promise<{ totalHours: number; totalPay: string }> {
-    // Simplified implementation to allow build
-    // TODO: Implement proper overtime calculation when overtime service methods are ready
-    return {
-      totalHours: 0,
-      totalPay: '0',
-    };
+    try {
+      // Get current salary for overtime rate calculation
+      const currentSalary = await this.salaryService.getCurrentSalary(tenantSlug, parseInt(employeeId));
+      if (!currentSalary) {
+        return { totalHours: 0, totalPay: '0' };
+      }
+
+      // Fetch approved overtime requests for the period
+      const overtimeRequests = await this.overtimeRequestService.findAll(
+        tenantSlug,
+        {
+          employeeId: parseInt(employeeId),
+          status: 'APPROVED',
+          startDate: periodStart.toISOString(),
+          endDate: periodEnd.toISOString(),
+          take: 100, // Get all overtime requests in the period
+        },
+      );
+
+      if (!overtimeRequests?.requests || overtimeRequests.requests.length === 0) {
+        return { totalHours: 0, totalPay: '0' };
+      }
+
+      // Calculate total overtime hours and pay
+      let totalMinutes = 0;
+      let totalPay = new Prisma.Decimal(0);
+
+      for (const overtime of overtimeRequests.requests) {
+        // Add minutes from overtime request
+        totalMinutes += overtime.totalMinutes || 0;
+        
+        // Add calculated amount if available
+        if (overtime.calculatedAmount) {
+          totalPay = totalPay.plus(new Prisma.Decimal(overtime.calculatedAmount));
+        }
+      }
+
+      const totalHours = totalMinutes / 60;
+
+      return {
+        totalHours,
+        totalPay: totalPay.toString(),
+      };
+    } catch (error) {
+      console.error('Failed to calculate overtime pay:', error);
+      // Return 0 instead of throwing to avoid breaking payroll generation
+      return { totalHours: 0, totalPay: '0' };
+    }
   }
 
   private isHoliday(date: Date): boolean {

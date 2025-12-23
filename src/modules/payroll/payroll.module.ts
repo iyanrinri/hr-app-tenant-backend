@@ -7,6 +7,7 @@ import { SalaryModule } from '../salary/salary.module';
 import { OvertimeModule } from '../overtime/overtime.module';
 import { SettingsModule } from '../settings/settings.module';
 import { AttendanceModule } from '../attendance/attendance.module';
+import { EmployeesModule } from '../employees/employees.module';
 
 @Module({
   imports: [
@@ -15,6 +16,7 @@ import { AttendanceModule } from '../attendance/attendance.module';
     OvertimeModule,
     SettingsModule,
     AttendanceModule,
+    EmployeesModule,
   ],
   controllers: [PayrollController],
   providers: [PayrollService, PayrollRepository],

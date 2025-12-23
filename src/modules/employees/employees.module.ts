@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { Module, forwardRef } from '@nestjs/common';
 import { MulterModule } from '@nestjs/platform-express';
 import { EmployeesService } from './employees.service';
 import { EmployeesController } from './employees.controller';
@@ -7,7 +7,7 @@ import { AuthModule } from '../../auth/auth.module';
 import { multerConfig } from '../../common/config/multer.config';
 
 @Module({
-  imports: [AuthModule, MulterModule.register(multerConfig)],
+  imports: [forwardRef(() => AuthModule), MulterModule.register(multerConfig)],
   providers: [EmployeesService, MultiTenantPrismaService],
   controllers: [EmployeesController],
   exports: [EmployeesService, MultiTenantPrismaService],

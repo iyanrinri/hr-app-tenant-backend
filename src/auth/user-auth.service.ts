@@ -6,6 +6,7 @@ import {
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { MultiTenantPrismaService } from '@/database/multi-tenant-prisma.service';
+import { EmployeesService } from '@/modules/employees/employees.service';
 import * as bcrypt from 'bcrypt';
 
 @Injectable()
@@ -13,6 +14,7 @@ export class UserAuthService {
   constructor(
     private prisma: MultiTenantPrismaService,
     private jwtService: JwtService,
+    private employeesService: EmployeesService,
   ) {}
 
   /**
@@ -42,6 +44,22 @@ export class UserAuthService {
         throw new UnauthorizedException('User account is inactive');
       }
 
+      // Fetch employee data if exists
+      let employeeId: string | undefined;
+      
+      if (this.employeesService) {
+        try {
+          const userId = BigInt(user.id);
+          const employee = await this.employeesService.findByUserId(tenantSlug, userId);
+          
+          if (employee) {
+            employeeId = employee.id.toString();
+          }
+        } catch (error) {
+          // Continue without employeeId if fetch fails
+        }
+      }
+
       // Generate JWT token
       const payload = {
         id: Number(user.id), // Convert BigInt to number
@@ -50,6 +68,7 @@ export class UserAuthService {
         lastName: user.lastName,
         tenantSlug,
         role: user.role,
+        employeeId, // Add employee ID to JWT
       };
 
       const access_token = this.jwtService.sign(payload, {
@@ -65,6 +84,7 @@ export class UserAuthService {
           lastName: user.lastName,
           role: user.role,
           isActive: user.isActive,
+          employeeId, // Include in response
         },
       };
     } catch (error) {

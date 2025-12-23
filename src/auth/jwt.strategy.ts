@@ -20,6 +20,7 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
       tenantId: payload.tenantId,
       tenantSlug: payload.tenantSlug,
       role: payload.role,
+      employee: payload.employeeId ? { id: payload.employeeId } : undefined,
     };
   }
 }

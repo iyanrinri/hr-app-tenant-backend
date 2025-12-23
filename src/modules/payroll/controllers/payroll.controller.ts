@@ -9,6 +9,7 @@ import {
   Query,
   UseGuards,
   Req,
+  ForbiddenException,
 } from '@nestjs/common';
 import {
   ApiTags,
@@ -22,23 +23,27 @@ import { JwtAuthGuard } from '@/common/guards';
 import { RolesGuard } from '@/common/guards';
 import { Roles } from '../../../common/decorators/roles.decorator';
 import { PayrollService } from '../services/payroll.service';
-import { CreatePayrollDto, ProcessPayrollDto } from '../dto/create-payroll.dto';
+import { CreatePayrollDto, ProcessPayrollDto, BulkGeneratePayrollDto } from '../dto/create-payroll.dto';
 import { PayrollQueryDto, PayrollStatus } from '../dto/payroll-query.dto';
 import { PayrollDto, PayrollListResponseDto } from '../dto/payroll-response.dto';
 import { Role } from '@prisma/client';
+import { EmployeesService } from '../../employees/employees.service';
 
 @ApiTags('Payroll')
 @ApiBearerAuth()
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Controller(':tenant_slug/payroll')
 export class PayrollController {
-  constructor(private readonly payrollService: PayrollService) {}
+  constructor(
+    private readonly payrollService: PayrollService,
+    private readonly employeesService: EmployeesService,
+  ) {}
 
   @Post()
   @Roles(Role.SUPER, Role.ADMIN, Role.HR)
   @ApiOperation({
     summary: 'Create payroll record',
-    description: 'Create a new payroll record for an employee with automatic overtime calculation',
+    description: 'Create a new payroll record for an employee with automatic overtime calculation and bonus percentage support',
   })
   @ApiResponse({
     status: 201,
@@ -59,6 +64,51 @@ export class PayrollController {
     @Req() req: any,
   ): Promise<PayrollDto> {
     return this.payrollService.createPayroll(tenantSlug, createPayrollDto, req.user.userId);
+  }
+
+  @Post('bulk-generate')
+  @Roles(Role.SUPER, Role.ADMIN, Role.HR)
+  @ApiOperation({
+    summary: 'Bulk generate payroll for all employees',
+    description: 'Generate payroll for all active employees (or specific ones) with one click. Automatically calculates overtime and applies bonus percentage. Deductions are manual per employee.',
+  })
+  @ApiResponse({
+    status: 201,
+    description: 'Payrolls generated successfully',
+    schema: {
+      properties: {
+        generated: { type: 'number', example: 10 },
+        failed: {
+          type: 'array',
+          items: {
+            type: 'object',
+            properties: {
+              employeeId: { type: 'string' },
+              reason: { type: 'string' },
+            },
+          },
+        },
+        payrolls: {
+          type: 'array',
+          items: { $ref: '#/components/schemas/PayrollDto' },
+        },
+      },
+    },
+  })
+  @ApiResponse({
+    status: 400,
+    description: 'Bad request - validation error',
+  })
+  @ApiResponse({
+    status: 403,
+    description: 'Forbidden - insufficient permissions',
+  })
+  async bulkGeneratePayroll(
+    @Param('tenant_slug') tenantSlug: string,
+    @Body() bulkGenerateDto: BulkGeneratePayrollDto,
+    @Req() req: any,
+  ) {
+    return this.payrollService.bulkGeneratePayroll(tenantSlug, bulkGenerateDto, req.user.userId);
   }
 
   @Get()
@@ -227,8 +277,23 @@ export class PayrollController {
     
     // Employees can only view their own payroll
     if (req.user.role === Role.EMPLOYEE) {
-      if (payroll.employeeId !== req.user.employee?.id?.toString()) {
-        throw new Error('Forbidden - can only view own payroll');
+      let employeeId = req.user.employee?.id?.toString();
+      
+      // If employeeId not in JWT, verify ownership via employee's userId
+      if (!employeeId) {
+        try {
+          const employee = await this.employeesService.getEmployee(tenantSlug, payroll.employeeId);
+          
+          // Check if employee's userId matches the requesting user's ID
+          if (!employee || !employee.userId || employee.userId.toString() !== req.user.id.toString()) {
+            throw new ForbiddenException('You can only view your own payroll');
+          }
+          // User owns this employee record, allow access
+        } catch (error) {
+          throw new ForbiddenException('You can only view your own payroll');
+        }
+      } else if (payroll.employeeId !== employeeId) {
+        throw new ForbiddenException('You can only view your own payroll');
       }
     }
     
