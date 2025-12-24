@@ -154,14 +154,9 @@ export class PayslipRepository {
   async findByEmployeeId(tenantSlug: string, employeeId: bigint, limit: number = 10) {
     const client = this.prisma.getClient(tenantSlug);
     
+    // Get payslip IDs first
     const query = `
-      SELECT 
-        ps.*,
-        pr."periodStart" as "payroll_periodStart",
-        pr."periodEnd" as "payroll_periodEnd",
-        pr."baseSalary" as "payroll_baseSalary",
-        pr."overtimePay" as "payroll_overtimePay",
-        pr.bonuses as "payroll_bonuses"
+      SELECT ps.id
       FROM payslips ps
       LEFT JOIN payrolls pr ON pr.id = ps."payrollId"
       WHERE pr."employeeId" = ${employeeId}
@@ -171,18 +166,12 @@ export class PayslipRepository {
     
     const results = await client.$queryRawUnsafe(query);
     
-    return results.map((row: any) => {
-      return convertBigIntAndDecimalToString({
-        ...row,
-        payroll: {
-          periodStart: row.payroll_periodStart,
-          periodEnd: row.payroll_periodEnd,
-          baseSalary: row.payroll_baseSalary,
-          overtimePay: row.payroll_overtimePay,
-          bonuses: row.payroll_bonuses,
-        },
-      });
-    });
+    // Fetch full payslip details for each ID
+    const payslips = await Promise.all(
+      results.map((row: any) => this.findOne(tenantSlug, row.id))
+    );
+    
+    return payslips.filter(p => p !== null);
   }
 
   async createDeduction(tenantSlug: string, data: any) {
