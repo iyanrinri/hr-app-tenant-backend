@@ -177,6 +177,7 @@ export class PayrollService {
 
     const updatedPayroll = await this.payrollRepository.update(tenantSlug, id, {
       isPaid: true,
+      paidAt: new Date(),
       updatedAt: new Date(),
     });
 

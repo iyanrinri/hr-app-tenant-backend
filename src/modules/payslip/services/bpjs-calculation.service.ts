@@ -148,18 +148,46 @@ export class BPJSCalculationService {
 
   /**
    * Get BPJS configuration from Settings table
+   * Falls back to 2024 Indonesia BPJS defaults
    */
   private async getBPJSConfig(tenantSlug: string): Promise<BPJSConfig> {
-    const settings = await this.prisma.getClient(tenantSlug).setting.findMany({
-      where: {
-        OR: [
-          { category: SettingCategory.BPJS_KESEHATAN },
-          { category: SettingCategory.BPJS_KETENAGAKERJAAN },
-        ],
-      },
-    });
+    // Default BPJS config for 2024
+    const defaultConfig: BPJSConfig = {
+      kesehatanEmployeeRate: 0.01,      // 1%
+      kesehatanCompanyRate: 0.04,       // 4%
+      kesehatanMaxSalary: 12000000,     // 12 juta
+      jhtEmployeeRate: 0.02,            // 2%
+      jhtCompanyRate: 0.037,            // 3.7%
+      jpEmployeeRate: 0.01,             // 1%
+      jpCompanyRate: 0.02,              // 2%
+      jpMaxSalary: 9559600,             // ~9.5 juta
+      jkkRate: 0.0024,                  // 0.24% (LOW risk default)
+      jkmCompanyRate: 0.003,            // 0.3%
+    };
 
-    const config: any = {};
+    try {
+      const client = this.prisma.getClient(tenantSlug);
+      
+      // Check if setting model exists
+      if (!client.setting) {
+        return defaultConfig;
+      }
+
+      const settings = await client.setting.findMany({
+        where: {
+          OR: [
+            { category: SettingCategory.BPJS_KESEHATAN },
+            { category: SettingCategory.BPJS_KETENAGAKERJAAN },
+          ],
+        },
+      });
+
+      // If no settings found, use defaults
+      if (!settings || settings.length === 0) {
+        return defaultConfig;
+      }
+
+      const config: any = { ...defaultConfig };
 
     settings.forEach((setting: any) => {
       switch (setting.key) {
@@ -205,7 +233,11 @@ export class BPJSCalculationService {
       }
     });
 
-    return config as BPJSConfig;
+      return config as BPJSConfig;
+    } catch (error) {
+      // If settings table doesn't exist or any error, use defaults
+      return defaultConfig;
+    }
   }
 
   /**
@@ -215,18 +247,38 @@ export class BPJSCalculationService {
     tenantSlug: string,
     riskCategory: 'LOW' | 'MEDIUM_LOW' | 'MEDIUM' | 'MEDIUM_HIGH' | 'HIGH',
   ): Promise<number> {
-    const keyMap = {
-      LOW: 'BPJS_TK_JKK_RATE_LOW',
-      MEDIUM_LOW: 'BPJS_TK_JKK_RATE_MEDIUM_LOW',
-      MEDIUM: 'BPJS_TK_JKK_RATE_MEDIUM',
-      MEDIUM_HIGH: 'BPJS_TK_JKK_RATE_MEDIUM_HIGH',
-      HIGH: 'BPJS_TK_JKK_RATE_HIGH',
+    const defaultRates = {
+      LOW: 0.0024,           // 0.24%
+      MEDIUM_LOW: 0.0054,    // 0.54%
+      MEDIUM: 0.0089,        // 0.89%
+      MEDIUM_HIGH: 0.0127,   // 1.27%
+      HIGH: 0.0174,          // 1.74%
     };
 
-    const setting = await this.prisma.getClient(tenantSlug).setting.findUnique({
-      where: { key: keyMap[riskCategory] },
-    });
+    try {
+      const client = this.prisma.getClient(tenantSlug);
+      
+      // Check if setting model exists
+      if (!client.setting) {
+        return defaultRates[riskCategory];
+      }
 
-    return setting ? parseFloat(setting.value) : 0.0024; // Default to LOW
+      const keyMap = {
+        LOW: 'BPJS_TK_JKK_RATE_LOW',
+        MEDIUM_LOW: 'BPJS_TK_JKK_RATE_MEDIUM_LOW',
+        MEDIUM: 'BPJS_TK_JKK_RATE_MEDIUM',
+        MEDIUM_HIGH: 'BPJS_TK_JKK_RATE_MEDIUM_HIGH',
+        HIGH: 'BPJS_TK_JKK_RATE_HIGH',
+      };
+
+      const setting = await client.setting.findUnique({
+        where: { key: keyMap[riskCategory] },
+      });
+
+      return setting ? parseFloat(setting.value) : defaultRates[riskCategory];
+    } catch (error) {
+      // If settings table doesn't exist or any error, use defaults
+      return defaultRates[riskCategory];
+    }
   }
 }

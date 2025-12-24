@@ -19,6 +19,79 @@ export class PayslipDeductionDto {
   amount: string;
 }
 
+export class PayslipEmployeeDto {
+  @ApiProperty()
+  @Expose()
+  id: string;
+
+  @ApiProperty()
+  @Expose()
+  firstName: string;
+
+  @ApiProperty()
+  @Expose()
+  lastName: string;
+
+  @ApiProperty()
+  @Expose()
+  position: string;
+
+  @ApiProperty()
+  @Expose()
+  department: string;
+
+  @ApiProperty({ required: false })
+  @Expose()
+  employeeNumber?: string;
+
+  @ApiProperty({ required: false })
+  @Expose()
+  maritalStatus?: string;
+}
+
+export class PayslipPayrollDto {
+  @ApiProperty()
+  @Expose()
+  id: string;
+
+  @ApiProperty()
+  @Expose()
+  periodStart: string;
+
+  @ApiProperty()
+  @Expose()
+  periodEnd: string;
+
+  @ApiProperty()
+  @Expose()
+  baseSalary: string;
+
+  @ApiProperty()
+  @Expose()
+  overtimePay: string;
+
+  @ApiProperty()
+  @Expose()
+  bonuses: string;
+
+  @ApiProperty()
+  @Expose()
+  isPaid: boolean;
+
+  @ApiProperty({ required: false })
+  @Expose()
+  paidAt?: string;
+
+  @ApiProperty({ required: false })
+  @Expose()
+  processedAt?: string;
+
+  @ApiProperty({ type: () => PayslipEmployeeDto })
+  @Expose()
+  @Type(() => PayslipEmployeeDto)
+  employee: PayslipEmployeeDto;
+}
+
 export class PayslipResponseDto {
   @ApiProperty()
   @Expose()
@@ -102,6 +175,11 @@ export class PayslipResponseDto {
   updatedAt: string;
 
   // Relations
+  @ApiProperty({ type: () => PayslipPayrollDto })
+  @Expose()
+  @Type(() => PayslipPayrollDto)
+  payroll: PayslipPayrollDto;
+
   @ApiProperty({ type: () => PayslipDeductionDto, isArray: true })
   @Expose()
   @Type(() => PayslipDeductionDto)

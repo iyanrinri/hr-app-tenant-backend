@@ -52,6 +52,9 @@ export class PayslipRepository {
         pr."baseSalary" as "payroll_baseSalary",
         pr."overtimePay" as "payroll_overtimePay",
         pr.bonuses as "payroll_bonuses",
+        pr."isPaid" as "payroll_isPaid",
+        pr."paidAt" as "payroll_paidAt",
+        pr."processedAt" as "payroll_processedAt",
         e.id as "employee_id",
         e."firstName" as "employee_firstName",
         e."lastName" as "employee_lastName",
@@ -81,8 +84,30 @@ export class PayslipRepository {
     `;
     const deductions = await client.$queryRawUnsafe(deductionsQuery);
     
+    // Clean up flattened fields before returning
+    const cleanedRow = { ...row };
+    delete cleanedRow.payroll_id;
+    delete cleanedRow.payroll_periodStart;
+    delete cleanedRow.payroll_periodEnd;
+    delete cleanedRow.payroll_baseSalary;
+    delete cleanedRow.payroll_overtimePay;
+    delete cleanedRow.payroll_bonuses;
+    delete cleanedRow.payroll_isPaid;
+    delete cleanedRow.payroll_paidAt;
+    delete cleanedRow.payroll_processedAt;
+    delete cleanedRow.employee_id;
+    delete cleanedRow.employee_firstName;
+    delete cleanedRow.employee_lastName;
+    delete cleanedRow.employee_position;
+    delete cleanedRow.employee_department;
+    delete cleanedRow.employee_employeeNumber;
+    delete cleanedRow.employee_maritalStatus;
+    delete cleanedRow.generator_id;
+    delete cleanedRow.generator_email;
+    delete cleanedRow.generator_role;
+    
     return convertBigIntAndDecimalToString({
-      ...row,
+      ...cleanedRow,
       payroll: {
         id: row.payroll_id,
         periodStart: row.payroll_periodStart,
@@ -90,6 +115,9 @@ export class PayslipRepository {
         baseSalary: row.payroll_baseSalary,
         overtimePay: row.payroll_overtimePay,
         bonuses: row.payroll_bonuses,
+        isPaid: row.payroll_isPaid,
+        paidAt: row.payroll_paidAt,
+        processedAt: row.payroll_processedAt,
         employee: {
           id: row.employee_id,
           firstName: row.employee_firstName,

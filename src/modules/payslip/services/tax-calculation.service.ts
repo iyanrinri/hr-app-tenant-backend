@@ -89,30 +89,135 @@ export class TaxCalculationService {
 
   /**
    * Get PTKP configuration from Settings table
+   * Falls back to 2024 Indonesia PTKP defaults
    */
   private async getPTKPConfig(tenantSlug: string): Promise<PTKPConfig> {
-    const ptkpSettings = await this.prisma.getClient(tenantSlug).setting.findMany({
-      where: {
-        category: SettingCategory.TAX_PPH21,
-        key: {
-          startsWith: 'TAX_PTKP_',
+    // Default PTKP values for 2024 (in IDR)
+    const defaultConfig: PTKPConfig = {
+      TK_0: 54000000,   // Tidak Kawin, 0 tanggungan
+      TK_1: 58500000,   // Tidak Kawin, 1 tanggungan
+      TK_2: 63000000,   // Tidak Kawin, 2 tanggungan
+      TK_3: 67500000,   // Tidak Kawin, 3 tanggungan
+      K_0: 58500000,    // Kawin, 0 tanggungan
+      K_1: 63000000,    // Kawin, 1 tanggungan
+      K_2: 67500000,    // Kawin, 2 tanggungan
+      K_3: 72000000,    // Kawin, 3 tanggungan
+    };
+
+    try {
+      const client = this.prisma.getClient(tenantSlug);
+      
+      // Check if setting model exists
+      if (!client.setting) {
+        return defaultConfig;
+      }
+
+      const ptkpSettings = await client.setting.findMany({
+        where: {
+          category: SettingCategory.TAX_PPH21,
+          key: {
+            startsWith: 'TAX_PTKP_',
+          },
         },
-      },
-    });
+      });
 
-    const config: any = {};
-    ptkpSettings.forEach((setting: any) => {
-      const key = setting.key.replace('TAX_PTKP_', '');
-      config[key] = parseFloat(setting.value);
-    });
+      // If no settings found, use defaults
+      if (!ptkpSettings || ptkpSettings.length === 0) {
+        return defaultConfig;
+      }
 
-    return config as PTKPConfig;
+      const config: any = {};
+      ptkpSettings.forEach((setting: any) => {
+        const key = setting.key.replace('TAX_PTKP_', '');
+        config[key] = parseFloat(setting.value);
+      });
+
+      return { ...defaultConfig, ...config } as PTKPConfig;
+    } catch (error) {
+      // If settings table doesn't exist or any error, use defaults
+      return defaultConfig;
+    }
   }
 
   /**
    * Get Tax Brackets configuration from Settings table
+   * Falls back to 2024 Indonesia PPh 21 progressive tax rates
    */
   private async getTaxBrackets(tenantSlug: string): Promise<TaxBracket[]> {
+    // Default tax brackets for 2024 Indonesia PPh 21
+    const defaultBrackets: TaxBracket[]= [
+      { limit: 60000000, rate: 0.05 },      // 0 - 60 juta: 5%
+      { limit: 250000000, rate: 0.15 },     // 60 - 250 juta: 15%
+      { limit: 500000000, rate: 0.25 },     // 250 - 500 juta: 25%
+      { limit: 5000000000, rate: 0.30 },    // 500 juta - 5 miliar: 30%
+      { limit: null, rate: 0.35 },          // > 5 miliar: 35%
+    ];
+
+    try {
+      const client = this.prisma.getClient(tenantSlug);
+      
+      // Check if setting model exists
+      if (!client.setting) {
+        return defaultBrackets;
+      }
+
+      const bracketSettings = await client.setting.findMany({
+        where: {
+          category: SettingCategory.TAX_PPH21,
+          key: {
+            startsWith: 'TAX_BRACKET_',
+          },
+        },
+        orderBy: {
+          key: 'asc',
+        },
+      });
+
+      // If no settings found, use defaults
+      if (!bracketSettings || bracketSettings.length === 0) {
+        return defaultBrackets;
+      }
+
+      // Parse brackets from settings
+      const brackets: TaxBracket[] = [];
+      const limits: { [key: number]: number | null } = {};
+      const rates: { [key: number]: number } = {};
+
+      bracketSettings.forEach((setting: any) => {
+        const match = setting.key.match(/TAX_BRACKET_(\d+)_(LIMIT|RATE)/);
+        if (match) {
+          const bracketNum = parseInt(match[1]);
+          const type = match[2];
+
+          if (type === 'LIMIT') {
+            limits[bracketNum] = parseFloat(setting.value);
+          } else if (type === 'RATE') {
+            rates[bracketNum] = parseFloat(setting.value);
+          }
+        }
+      });
+
+      // Build bracket array
+      const maxBracket = Math.max(...Object.keys(limits).map(Number));
+      for (let i = 1; i <= maxBracket; i++) {
+        brackets.push({
+          limit: limits[i] !== undefined ? limits[i] : null,
+          rate: rates[i] || 0,
+        });
+      }
+
+      return brackets.length > 0 ? brackets : defaultBrackets;
+    } catch (error) {
+      // If settings table doesn't exist or any error, use defaults
+      return defaultBrackets;
+    }
+  }
+
+  /**
+   * DEPRECATED: Old getTaxBrackets implementation
+   * Kept for reference when implementing settings table
+   */
+  private async getTaxBracketsFromSettings(tenantSlug: string): Promise<TaxBracket[]> {
     const bracketSettings = await this.prisma.getClient(tenantSlug).setting.findMany({
       where: {
         category: SettingCategory.TAX_PPH21,
