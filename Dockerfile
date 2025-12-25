@@ -16,8 +16,8 @@ RUN pnpm install --frozen-lockfile
 # Copy source code
 COPY . .
 
-# Generate Prisma Client
-RUN pnpm prisma generate
+# Generate Prisma Client (with dummy DATABASE_URL for build time)
+RUN DATABASE_URL="postgresql://dummy:dummy@localhost:5432/dummy" pnpm prisma generate
 
 # Build the application
 RUN pnpm build
@@ -37,8 +37,8 @@ COPY prisma ./prisma
 # Install production dependencies only
 RUN pnpm install --prod --frozen-lockfile
 
-# Generate Prisma Client
-RUN pnpm prisma generate
+# Generate Prisma Client (with dummy DATABASE_URL for build time)
+RUN DATABASE_URL="postgresql://dummy:dummy@localhost:5432/dummy" pnpm prisma generate
 
 # Copy built application from builder stage
 COPY --from=builder /app/dist ./dist
