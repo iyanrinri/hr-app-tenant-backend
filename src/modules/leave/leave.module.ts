@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { DatabaseModule } from '../../database/database.module';
 import { EmployeesModule } from '../employees/employees.module';
 import { MultiTenantPrismaService } from '@/database/multi-tenant-prisma.service';
+import { MailService } from '@/common/services/mail.service';
 
 // Controllers
 import { LeavePeriodController } from './controllers/leave-period.controller';
@@ -32,6 +33,7 @@ import { LeaveRequestRepository } from './repositories/leave-request.repository'
   ],
   providers: [
     MultiTenantPrismaService,
+    MailService,
     LeavePeriodService,
     LeaveTypeService,
     LeaveBalanceService,

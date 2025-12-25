@@ -1,5 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
-// import * as nodemailer from 'nodemailer'; // TODO: Install nodemailer when needed
+import { MailService } from '@/common/services/mail.service';
 
 interface LeaveNotificationData {
   employeeName: string;
@@ -15,19 +15,9 @@ interface LeaveNotificationData {
 @Injectable()
 export class LeaveEmailService {
   private readonly logger = new Logger(LeaveEmailService.name);
-  private transporter: any; // nodemailer.Transporter;
 
-  constructor() {
-    // TODO: Configure nodemailer when needed
-    // Gmail SMTP Configuration (dummy for development)
-    // this.transporter = nodemailer.createTransport({
-    //   service: 'gmail',
-    //   auth: {
-    //     user: process.env.GMAIL_USER || 'hr-system@company.com',
-    //     pass: process.env.GMAIL_APP_PASSWORD || 'dummy-password', // App-specific password
-    //   },
-    // });
-    this.logger.log('Email service initialized (nodemailer disabled)');
+  constructor(private mailService: MailService) {
+    this.logger.log('Leave email service initialized');
   }
 
   async sendLeaveRequestToManager(
@@ -36,44 +26,44 @@ export class LeaveEmailService {
     leaveData: LeaveNotificationData
   ): Promise<void> {
     try {
-      const mailOptions = {
-        from: process.env.GMAIL_USER || 'hr-system@company.com',
-        to: managerEmail,
-        subject: `Leave Request - ${leaveData.employeeName} (${leaveData.leaveType})`,
-        html: `
-          <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-            <h2 style="color: #333;">Leave Request Approval Required</h2>
-            
-            <p>Dear ${managerName},</p>
-            
-            <p>A new leave request has been submitted by <strong>${leaveData.employeeName}</strong> and requires your approval.</p>
-            
-            <div style="background-color: #f8f9fa; padding: 15px; border-radius: 5px; margin: 20px 0;">
-              <h3 style="color: #495057; margin-top: 0;">Leave Details:</h3>
-              <ul style="list-style: none; padding: 0;">
-                <li><strong>Employee:</strong> ${leaveData.employeeName}</li>
-                <li><strong>Leave Type:</strong> ${leaveData.leaveType}</li>
-                <li><strong>Start Date:</strong> ${leaveData.startDate}</li>
-                <li><strong>End Date:</strong> ${leaveData.endDate}</li>
-                <li><strong>Total Days:</strong> ${leaveData.totalDays} day(s)</li>
-                <li><strong>Reason:</strong> ${leaveData.reason}</li>
-                ${leaveData.emergencyContact ? `<li><strong>Emergency Contact:</strong> ${leaveData.emergencyContact}</li>` : ''}
-                ${leaveData.handoverNotes ? `<li><strong>Handover Notes:</strong> ${leaveData.handoverNotes}</li>` : ''}
-              </ul>
-            </div>
-            
-            <p>Please review and approve/reject this request through the HR system.</p>
-            
-            <div style="margin-top: 30px; padding-top: 15px; border-top: 1px solid #dee2e6;">
-              <p style="font-size: 12px; color: #6c757d;">
-                This is an automated email from the HR Management System.
-              </p>
-            </div>
+      const subject = `Leave Request - ${leaveData.employeeName} (${leaveData.leaveType})`;
+      const html = `
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+          <h2 style="color: #333;">Leave Request Approval Required</h2>
+          
+          <p>Dear ${managerName},</p>
+          
+          <p>A new leave request has been submitted by <strong>${leaveData.employeeName}</strong> and requires your approval.</p>
+          
+          <div style="background-color: #f8f9fa; padding: 15px; border-radius: 5px; margin: 20px 0;">
+            <h3 style="color: #495057; margin-top: 0;">Leave Details:</h3>
+            <ul style="list-style: none; padding: 0;">
+              <li><strong>Employee:</strong> ${leaveData.employeeName}</li>
+              <li><strong>Leave Type:</strong> ${leaveData.leaveType}</li>
+              <li><strong>Start Date:</strong> ${leaveData.startDate}</li>
+              <li><strong>End Date:</strong> ${leaveData.endDate}</li>
+              <li><strong>Total Days:</strong> ${leaveData.totalDays} day(s)</li>
+              <li><strong>Reason:</strong> ${leaveData.reason}</li>
+              ${leaveData.emergencyContact ? `<li><strong>Emergency Contact:</strong> ${leaveData.emergencyContact}</li>` : ''}
+              ${leaveData.handoverNotes ? `<li><strong>Handover Notes:</strong> ${leaveData.handoverNotes}</li>` : ''}
+            </ul>
           </div>
-        `,
-      };
+          
+          <p>Please review and approve/reject this request through the HR system.</p>
+          
+          <div style="margin-top: 30px; padding-top: 15px; border-top: 1px solid #dee2e6;">
+            <p style="font-size: 12px; color: #6c757d;">
+              This is an automated email from the HR Management System.
+            </p>
+          </div>
+        </div>
+      `;
 
-      await this.transporter.sendMail(mailOptions);
+      await this.mailService.sendMail({
+        to: managerEmail,
+        subject,
+        html,
+      });
       this.logger.log(`Leave request email sent to manager: ${managerEmail}`);
     } catch (error) {
       this.logger.error(`Failed to send email to manager: ${error.message}`);
@@ -86,44 +76,44 @@ export class LeaveEmailService {
     leaveData: LeaveNotificationData
   ): Promise<void> {
     try {
-      const mailOptions = {
-        from: process.env.GMAIL_USER || 'hr-system@company.com',
-        to: hrEmail,
-        subject: `Leave Request - ${leaveData.employeeName} (${leaveData.leaveType})`,
-        html: `
-          <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-            <h2 style="color: #333;">New Leave Request Submitted</h2>
-            
-            <p>Dear HR Team,</p>
-            
-            <p>A new leave request has been submitted by <strong>${leaveData.employeeName}</strong>.</p>
-            
-            <div style="background-color: #f8f9fa; padding: 15px; border-radius: 5px; margin: 20px 0;">
-              <h3 style="color: #495057; margin-top: 0;">Leave Details:</h3>
-              <ul style="list-style: none; padding: 0;">
-                <li><strong>Employee:</strong> ${leaveData.employeeName}</li>
-                <li><strong>Leave Type:</strong> ${leaveData.leaveType}</li>
-                <li><strong>Start Date:</strong> ${leaveData.startDate}</li>
-                <li><strong>End Date:</strong> ${leaveData.endDate}</li>
-                <li><strong>Total Days:</strong> ${leaveData.totalDays} day(s)</li>
-                <li><strong>Reason:</strong> ${leaveData.reason}</li>
-                ${leaveData.emergencyContact ? `<li><strong>Emergency Contact:</strong> ${leaveData.emergencyContact}</li>` : ''}
-                ${leaveData.handoverNotes ? `<li><strong>Handover Notes:</strong> ${leaveData.handoverNotes}</li>` : ''}
-              </ul>
-            </div>
-            
-            <p>Please review this request in the HR system.</p>
-            
-            <div style="margin-top: 30px; padding-top: 15px; border-top: 1px solid #dee2e6;">
-              <p style="font-size: 12px; color: #6c757d;">
-                This is an automated email from the HR Management System.
-              </p>
-            </div>
+      const subject = `Leave Request - ${leaveData.employeeName} (${leaveData.leaveType})`;
+      const html = `
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+          <h2 style="color: #333;">New Leave Request Submitted</h2>
+          
+          <p>Dear HR Team,</p>
+          
+          <p>A new leave request has been submitted by <strong>${leaveData.employeeName}</strong>.</p>
+          
+          <div style="background-color: #f8f9fa; padding: 15px; border-radius: 5px; margin: 20px 0;">
+            <h3 style="color: #495057; margin-top: 0;">Leave Details:</h3>
+            <ul style="list-style: none; padding: 0;">
+              <li><strong>Employee:</strong> ${leaveData.employeeName}</li>
+              <li><strong>Leave Type:</strong> ${leaveData.leaveType}</li>
+              <li><strong>Start Date:</strong> ${leaveData.startDate}</li>
+              <li><strong>End Date:</strong> ${leaveData.endDate}</li>
+              <li><strong>Total Days:</strong> ${leaveData.totalDays} day(s)</li>
+              <li><strong>Reason:</strong> ${leaveData.reason}</li>
+              ${leaveData.emergencyContact ? `<li><strong>Emergency Contact:</strong> ${leaveData.emergencyContact}</li>` : ''}
+              ${leaveData.handoverNotes ? `<li><strong>Handover Notes:</strong> ${leaveData.handoverNotes}</li>` : ''}
+            </ul>
           </div>
-        `,
-      };
+          
+          <p>Please review this request in the HR system.</p>
+          
+          <div style="margin-top: 30px; padding-top: 15px; border-top: 1px solid #dee2e6;">
+            <p style="font-size: 12px; color: #6c757d;">
+              This is an automated email from the HR Management System.
+            </p>
+          </div>
+        </div>
+      `;
 
-      await this.transporter.sendMail(mailOptions);
+      await this.mailService.sendMail({
+        to: hrEmail,
+        subject,
+        html,
+      });
       this.logger.log(`Leave request email sent to HR: ${hrEmail}`);
     } catch (error) {
       this.logger.error(`Failed to send email to HR: ${error.message}`);
@@ -144,40 +134,40 @@ export class LeaveEmailService {
       const status = isApproved ? 'Approved' : 'Rejected';
       const statusColor = isApproved ? '#28a745' : '#dc3545';
       
-      const mailOptions = {
-        from: process.env.GMAIL_USER || 'hr-system@company.com',
-        to: employeeEmail,
-        subject: `Leave Request ${status} - ${leaveData.leaveType}`,
-        html: `
-          <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-            <h2 style="color: ${statusColor};">Leave Request ${status}</h2>
-            
-            <p>Dear ${employeeName},</p>
-            
-            <p>Your leave request has been <strong style="color: ${statusColor};">${status.toLowerCase()}</strong> by ${approverName} (${approverType}).</p>
-            
-            <div style="background-color: #f8f9fa; padding: 15px; border-radius: 5px; margin: 20px 0;">
-              <h3 style="color: #495057; margin-top: 0;">Leave Details:</h3>
-              <ul style="list-style: none; padding: 0;">
-                <li><strong>Leave Type:</strong> ${leaveData.leaveType}</li>
-                <li><strong>Start Date:</strong> ${leaveData.startDate}</li>
-                <li><strong>End Date:</strong> ${leaveData.endDate}</li>
-                <li><strong>Total Days:</strong> ${leaveData.totalDays} day(s)</li>
-                <li><strong>Status:</strong> <span style="color: ${statusColor};">${status}</span></li>
-                ${comments ? `<li><strong>Comments:</strong> ${comments}</li>` : ''}
-              </ul>
-            </div>
-            
-            <div style="margin-top: 30px; padding-top: 15px; border-top: 1px solid #dee2e6;">
-              <p style="font-size: 12px; color: #6c757d;">
-                This is an automated email from the HR Management System.
-              </p>
-            </div>
+      const subject = `Leave Request ${status} - ${leaveData.leaveType}`;
+      const html = `
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+          <h2 style="color: ${statusColor};">Leave Request ${status}</h2>
+          
+          <p>Dear ${employeeName},</p>
+          
+          <p>Your leave request has been <strong style="color: ${statusColor};">${status.toLowerCase()}</strong> by ${approverName} (${approverType}).</p>
+          
+          <div style="background-color: #f8f9fa; padding: 15px; border-radius: 5px; margin: 20px 0;">
+            <h3 style="color: #495057; margin-top: 0;">Leave Details:</h3>
+            <ul style="list-style: none; padding: 0;">
+              <li><strong>Leave Type:</strong> ${leaveData.leaveType}</li>
+              <li><strong>Start Date:</strong> ${leaveData.startDate}</li>
+              <li><strong>End Date:</strong> ${leaveData.endDate}</li>
+              <li><strong>Total Days:</strong> ${leaveData.totalDays} day(s)</li>
+              <li><strong>Status:</strong> <span style="color: ${statusColor};">${status}</span></li>
+              ${comments ? `<li><strong>Comments:</strong> ${comments}</li>` : ''}
+            </ul>
           </div>
-        `,
-      };
+          
+          <div style="margin-top: 30px; padding-top: 15px; border-top: 1px solid #dee2e6;">
+            <p style="font-size: 12px; color: #6c757d;">
+              This is an automated email from the HR Management System.
+            </p>
+          </div>
+        </div>
+      `;
 
-      await this.transporter.sendMail(mailOptions);
+      await this.mailService.sendMail({
+        to: employeeEmail,
+        subject,
+        html,
+      });
       this.logger.log(`Leave ${status.toLowerCase()} notification sent to employee: ${employeeEmail}`);
     } catch (error) {
       this.logger.error(`Failed to send leave ${status.toLowerCase()} email: ${error.message}`);
