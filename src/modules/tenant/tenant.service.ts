@@ -3,18 +3,23 @@ import {
   Injectable,
   UnauthorizedException,
   NotFoundException,
+  Logger,
 } from '@nestjs/common';
 import { PrismaService } from '../../database/prisma.service';
 import { DatabaseTenantService } from '../../database/database-tenant.service';
 import { AuthService } from '../../auth/auth.service';
+import { MailService } from '../../common/services/mail.service';
 import { RegisterDto, LoginDto, UserProfileDto } from './dto';
 
 @Injectable()
 export class TenantService {
+  private readonly logger = new Logger(TenantService.name);
+
   constructor(
     private prisma: PrismaService,
     private authService: AuthService,
     private databaseTenantService: DatabaseTenantService,
+    private mailService: MailService,
   ) {}
 
   async register(registerDto: RegisterDto) {
@@ -85,6 +90,21 @@ export class TenantService {
 
     // Generate token
     const tokenResponse = await this.authService.generateToken(user);
+
+    // Send welcome email (non-blocking)
+    this.mailService
+      .sendTenantRegistrationEmail(
+        email,
+        firstName,
+        lastName,
+        tenantName,
+        slug,
+      )
+      .catch((error) => {
+        this.logger.error(
+          `Failed to send registration email to ${email}: ${error.message}`,
+        );
+      });
 
     return {
       message: 'Registration successful',
