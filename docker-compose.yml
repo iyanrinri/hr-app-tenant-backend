@@ -10,13 +10,14 @@ services:
     env_file:
       - .env
     environment:
-      DATABASE_URL: postgresql://${POSTGRES_USER:-hrapp}:${POSTGRES_PASSWORD:-hrapp123}@postgres:5432/${POSTGRES_DB:-hr_app_db}?schema=public
+      DATABASE_URL: postgresql://${POSTGRES_USER:-hrapp}:${POSTGRES_PASSWORD:-hrapp123}@host.docker.internal:5432/${POSTGRES_DB:-hr_app_db}?schema=public
+      KAFKA_BROKER: ${KAFKA_BROKER:-host.docker.internal:9093}
       NODE_ENV: ${NODE_ENV:-production}
     volumes:
       - ./uploads:/app/uploads
     networks:
       - hr-app-network
-    command: sh -c "pnpm prisma migrate deploy && pnpm migrate:tenants && node dist/main"
+    command: sh -c "pnpm exec prisma generate && pnpm prisma migrate deploy && pnpm run migrate:tenants && node dist/src/main"
 
 networks:
   hr-app-network:

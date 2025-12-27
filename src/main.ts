@@ -4,6 +4,7 @@ import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
 import { MicroserviceOptions, Transport } from '@nestjs/microservices';
 import { AppModule } from './app.module';
 import { ValidationExceptionFilter } from './common/filters/validation-exception.filter';
+import { ConfigService } from '@nestjs/config';
 
 // Global BigInt serialization for JSON
 (BigInt.prototype as any).toJSON = function() {
@@ -14,13 +15,21 @@ async function bootstrap() {
   // Create HTTP application
   const app = await NestFactory.create(AppModule);
 
+  const configService = app.get(ConfigService);
+  const broker = configService.get<string>('KAFKA_BROKER');
+
+  console.log(broker);
+  console.log('→ Attempting to connect to Kafka broker...');
+  if (!broker) {
+    throw new Error('KAFKA_BROKER is not defined');
+  }
   // Connect Kafka microservice as hybrid app
   app.connectMicroservice<MicroserviceOptions>({
     transport: Transport.KAFKA,
     options: {
       client: {
         clientId: 'hr-app-consumer',
-        brokers: [process.env.KAFKA_BROKER || 'localhost:9093'],
+        brokers: [broker],
       },
       consumer: {
         groupId: 'hr-app-attendance-group',

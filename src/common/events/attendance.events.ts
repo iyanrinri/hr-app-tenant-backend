@@ -1,10 +1,10 @@
 // Event constants for attendance module
 export const ATTENDANCE_EVENTS = {
-  CLOCK_IN: 'attendance.clock-in',
-  CLOCK_OUT: 'attendance.clock-out',
-  DASHBOARD_UPDATE: 'attendance.dashboard-update',
-  LATE_ARRIVAL: 'attendance.late-arrival',
-  EARLY_LEAVE: 'attendance.early-leave',
+  CLOCK_IN: 'attendance.clock_in',
+  CLOCK_OUT: 'attendance.clock_out',
+  DASHBOARD_UPDATE: 'attendance.dashboard_update',
+  LATE_ARRIVAL: 'attendance.late_arrival',
+  EARLY_LEAVE: 'attendance.early_leave',
 } as const;
 
 // Event payload interfaces

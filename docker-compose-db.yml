@@ -23,27 +23,23 @@ services:
     hostname: broker
     restart: always
     ports:
-      - "9093:9092"
-
+      - "9093:9093"
     environment:
       KAFKA_NODE_ID: 1
       KAFKA_PROCESS_ROLES: broker,controller
 
       KAFKA_LISTENERS: >
-        PLAINTEXT://broker:29092,
-        PLAINTEXT_HOST://0.0.0.0:9092,
-        CONTROLLER://broker:29093
+        CLIENT://0.0.0.0:9093,
+        CONTROLLER://0.0.0.0:29093
 
       KAFKA_ADVERTISED_LISTENERS: >
-        PLAINTEXT://broker:29092,
-        PLAINTEXT_HOST://localhost:9093
+        CLIENT://host.docker.internal:9093
 
       KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: >
-        PLAINTEXT:PLAINTEXT,
-        PLAINTEXT_HOST:PLAINTEXT,
+        CLIENT:PLAINTEXT,
         CONTROLLER:PLAINTEXT
 
-      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: CLIENT
       KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
       KAFKA_CONTROLLER_QUORUM_VOTERS: 1@broker:29093
 
@@ -56,7 +52,7 @@ services:
       test:
         [
           "CMD-SHELL",
-          "/opt/kafka/bin/kafka-topics.sh --bootstrap-server broker:29092 --list"
+          "/opt/kafka/bin/kafka-topics.sh --bootstrap-server host.docker.internal:9093 --list"
         ]
       interval: 30s
       timeout: 10s

@@ -7,7 +7,8 @@ RUN npm install -g pnpm
 WORKDIR /app
 
 # Copy package files
-COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml .npmrc ./
+COPY prisma.config.ts ./
 COPY prisma ./prisma
 
 # Install dependencies
@@ -31,18 +32,21 @@ RUN npm install -g pnpm
 WORKDIR /app
 
 # Copy package files
-COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml .npmrc ./
+COPY prisma.config.ts ./
 COPY prisma ./prisma
 
-# Install production dependencies only
-RUN pnpm install --prod --frozen-lockfile
+# Install all dependencies (not just prod) because Prisma needs runtime dependencies
+RUN pnpm install --frozen-lockfile
 
-# Generate Prisma Client (with dummy DATABASE_URL for build time)
-RUN DATABASE_URL="postgresql://dummy:dummy@localhost:5432/dummy" pnpm prisma generate
+# Install tsx for running TypeScript migration scripts
+RUN pnpm add tsx
 
 # Copy built application from builder stage
 COPY --from=builder /app/dist ./dist
-COPY --from=builder /app/node_modules/.prisma ./node_modules/.prisma
+
+# Generate Prisma Client (fresh in production with all correct deps)
+RUN DATABASE_URL="postgresql://dummy:dummy@localhost:5432/dummy" pnpm prisma generate
 
 # Create uploads directory
 RUN mkdir -p uploads/profiles
