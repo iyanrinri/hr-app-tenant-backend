@@ -349,12 +349,21 @@ export class DatabaseTenantService {
         CREATE TABLE IF NOT EXISTS "attendance_period" (
           "id" BIGSERIAL PRIMARY KEY,
           "name" VARCHAR(255) NOT NULL,
-          "startDate" DATE NOT NULL,
-          "endDate" DATE NOT NULL,
-          "workDays" INTEGER NOT NULL DEFAULT 0,
-          "isActive" BOOLEAN NOT NULL DEFAULT true,
-          "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
-          "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP
+          "startDate" TIMESTAMP NOT NULL,
+          "endDate" TIMESTAMP NOT NULL,
+          "workingDaysPerWeek" INTEGER DEFAULT 5,
+          "workingHoursPerDay" INTEGER DEFAULT 8,
+          "workingStartTime" VARCHAR(5) DEFAULT '09:00',
+          "workingEndTime" VARCHAR(5) DEFAULT '17:00',
+          "allowSaturdayWork" BOOLEAN DEFAULT false,
+          "allowSundayWork" BOOLEAN DEFAULT false,
+          "lateToleranceMinutes" INTEGER DEFAULT 15,
+          "earlyLeaveToleranceMinutes" INTEGER DEFAULT 15,
+          "description" TEXT,
+          "isActive" BOOLEAN DEFAULT false,
+          "createdBy" VARCHAR(255) NOT NULL,
+          "createdAt" TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+          "updatedAt" TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         );
       `);
 
@@ -459,6 +468,369 @@ export class DatabaseTenantService {
 
       await tenantClient.query(`
         CREATE INDEX IF NOT EXISTS "idx_holiday_date" ON "holiday"("date");
+      `);
+
+      // Create LeaveType enum
+      await tenantClient.query(`
+        DO $$ BEGIN
+          CREATE TYPE "LeaveType" AS ENUM ('ANNUAL', 'SICK', 'MATERNITY', 'PATERNITY', 'HAJJ_UMRAH', 'EMERGENCY', 'COMPASSIONATE', 'STUDY', 'UNPAID');
+        EXCEPTION
+          WHEN duplicate_object THEN null;
+        END $$;
+      `);
+
+      // Create LeaveRequestStatus enum
+      await tenantClient.query(`
+        DO $$ BEGIN
+          CREATE TYPE "LeaveRequestStatus" AS ENUM ('PENDING', 'MANAGER_APPROVED', 'APPROVED', 'REJECTED', 'CANCELLED');
+        EXCEPTION
+          WHEN duplicate_object THEN null;
+        END $$;
+      `);
+
+      // Create leave_period table
+      await tenantClient.query(`
+        CREATE TABLE IF NOT EXISTS "leave_period" (
+          "id" BIGSERIAL PRIMARY KEY,
+          "name" VARCHAR(255) NOT NULL,
+          "startDate" DATE NOT NULL,
+          "endDate" DATE NOT NULL,
+          "isActive" BOOLEAN DEFAULT false,
+          "description" TEXT,
+          "createdBy" BIGINT NOT NULL,
+          "createdAt" TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+          "updatedAt" TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );
+      `);
+
+      // Create leave_type_config table
+      await tenantClient.query(`
+        CREATE TABLE IF NOT EXISTS "leave_type_config" (
+          "id" BIGSERIAL PRIMARY KEY,
+          "leavePeriodId" BIGINT NOT NULL,
+          "type" "LeaveType" NOT NULL,
+          "name" VARCHAR(255) NOT NULL,
+          "defaultQuota" INTEGER NOT NULL,
+          "maxConsecutiveDays" INTEGER,
+          "advanceNoticeDays" INTEGER,
+          "isCarryForward" BOOLEAN DEFAULT false,
+          "maxCarryForward" INTEGER,
+          "requiresApproval" BOOLEAN DEFAULT true,
+          "allowNegativeBalance" BOOLEAN DEFAULT false,
+          "description" TEXT,
+          "isActive" BOOLEAN DEFAULT true,
+          "createdAt" TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+          "updatedAt" TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+          CONSTRAINT "leave_type_config_leavePeriodId_fkey" FOREIGN KEY ("leavePeriodId") REFERENCES "leave_period"("id") ON DELETE CASCADE,
+          CONSTRAINT "unique_leave_type_per_period" UNIQUE ("leavePeriodId", "type")
+        );
+      `);
+
+      // Create leave_balance table
+      await tenantClient.query(`
+        CREATE TABLE IF NOT EXISTS "leave_balance" (
+          "id" BIGSERIAL PRIMARY KEY,
+          "employeeId" BIGINT NOT NULL,
+          "leavePeriodId" BIGINT NOT NULL,
+          "leaveTypeConfigId" BIGINT NOT NULL,
+          "totalQuota" INTEGER NOT NULL DEFAULT 0,
+          "usedQuota" DECIMAL(5,2) DEFAULT 0,
+          "pendingQuota" DECIMAL(5,2) DEFAULT 0,
+          "adjustmentQuota" INTEGER DEFAULT 0,
+          "carriedForwardQuota" INTEGER DEFAULT 0,
+          "remainingQuota" DECIMAL(5,2) DEFAULT 0,
+          "lastUpdated" TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+          "createdAt" TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+          "updatedAt" TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+          CONSTRAINT "leave_balance_employeeId_fkey" FOREIGN KEY ("employeeId") REFERENCES "employees"("id") ON DELETE CASCADE,
+          CONSTRAINT "leave_balance_leavePeriodId_fkey" FOREIGN KEY ("leavePeriodId") REFERENCES "leave_period"("id") ON DELETE CASCADE,
+          CONSTRAINT "leave_balance_leaveTypeConfigId_fkey" FOREIGN KEY ("leaveTypeConfigId") REFERENCES "leave_type_config"("id") ON DELETE CASCADE,
+          CONSTRAINT "unique_employee_period_type" UNIQUE ("employeeId", "leavePeriodId", "leaveTypeConfigId")
+        );
+      `);
+
+      // Create leave_request table
+      await tenantClient.query(`
+        CREATE TABLE IF NOT EXISTS "leave_request" (
+          "id" BIGSERIAL PRIMARY KEY,
+          "employeeId" BIGINT NOT NULL,
+          "leaveTypeConfigId" BIGINT NOT NULL,
+          "leavePeriodId" BIGINT NOT NULL,
+          "startDate" DATE NOT NULL,
+          "endDate" DATE NOT NULL,
+          "totalDays" DECIMAL(5,2) NOT NULL,
+          "reason" TEXT NOT NULL,
+          "status" "LeaveRequestStatus" DEFAULT 'PENDING',
+          "managerApprovedBy" BIGINT,
+          "managerApprovedAt" TIMESTAMP,
+          "managerNotes" TEXT,
+          "hrApprovedBy" BIGINT,
+          "hrApprovedAt" TIMESTAMP,
+          "hrNotes" TEXT,
+          "rejectedBy" BIGINT,
+          "rejectedAt" TIMESTAMP,
+          "rejectionReason" TEXT,
+          "cancelledAt" TIMESTAMP,
+          "cancellationReason" TEXT,
+          "submittedAt" TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+          "createdAt" TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+          "updatedAt" TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+          CONSTRAINT "leave_request_employeeId_fkey" FOREIGN KEY ("employeeId") REFERENCES "employees"("id") ON DELETE CASCADE,
+          CONSTRAINT "leave_request_leaveTypeConfigId_fkey" FOREIGN KEY ("leaveTypeConfigId") REFERENCES "leave_type_config"("id") ON DELETE RESTRICT,
+          CONSTRAINT "leave_request_leavePeriodId_fkey" FOREIGN KEY ("leavePeriodId") REFERENCES "leave_period"("id") ON DELETE RESTRICT
+        );
+      `);
+
+      // Create indexes for leave tables
+      await tenantClient.query(`
+        CREATE INDEX IF NOT EXISTS "idx_leave_period_active" ON "leave_period"("isActive");
+      `);
+
+      await tenantClient.query(`
+        CREATE INDEX IF NOT EXISTS "idx_leave_period_dates" ON "leave_period"("startDate", "endDate");
+      `);
+
+      await tenantClient.query(`
+        CREATE INDEX IF NOT EXISTS "idx_leave_type_config_period" ON "leave_type_config"("leavePeriodId");
+      `);
+
+      await tenantClient.query(`
+        CREATE INDEX IF NOT EXISTS "idx_leave_type_config_type" ON "leave_type_config"("type");
+      `);
+
+      await tenantClient.query(`
+        CREATE INDEX IF NOT EXISTS "idx_leave_type_config_active" ON "leave_type_config"("isActive");
+      `);
+
+      await tenantClient.query(`
+        CREATE INDEX IF NOT EXISTS "idx_leave_balance_employee" ON "leave_balance"("employeeId");
+      `);
+
+      await tenantClient.query(`
+        CREATE INDEX IF NOT EXISTS "idx_leave_balance_period" ON "leave_balance"("leavePeriodId");
+      `);
+
+      await tenantClient.query(`
+        CREATE INDEX IF NOT EXISTS "idx_leave_balance_type_config" ON "leave_balance"("leaveTypeConfigId");
+      `);
+
+      await tenantClient.query(`
+        CREATE INDEX IF NOT EXISTS "idx_leave_request_employee" ON "leave_request"("employeeId");
+      `);
+
+      await tenantClient.query(`
+        CREATE INDEX IF NOT EXISTS "idx_leave_request_status" ON "leave_request"("status");
+      `);
+
+      await tenantClient.query(`
+        CREATE INDEX IF NOT EXISTS "idx_leave_request_dates" ON "leave_request"("startDate", "endDate");
+      `);
+
+      // Create OvertimeStatus enum
+      await tenantClient.query(`
+        DO $$ BEGIN
+          CREATE TYPE "OvertimeStatus" AS ENUM ('PENDING', 'MANAGER_APPROVED', 'HR_APPROVED', 'APPROVED', 'REJECTED', 'CANCELLED');
+        EXCEPTION
+          WHEN duplicate_object THEN null;
+        END $$;
+      `);
+
+      // Create ApprovalStatus enum
+      await tenantClient.query(`
+        DO $$ BEGIN
+          CREATE TYPE "ApprovalStatus" AS ENUM ('PENDING', 'APPROVED', 'REJECTED');
+        EXCEPTION
+          WHEN duplicate_object THEN null;
+        END $$;
+      `);
+
+      // Create overtime_request table
+      await tenantClient.query(`
+        CREATE TABLE IF NOT EXISTS "overtime_request" (
+          "id" BIGSERIAL PRIMARY KEY,
+          "employeeId" BIGINT NOT NULL,
+          "attendanceId" BIGINT,
+          "date" DATE NOT NULL,
+          "startTime" TIMESTAMP NOT NULL,
+          "endTime" TIMESTAMP NOT NULL,
+          "totalMinutes" INTEGER NOT NULL,
+          "reason" TEXT NOT NULL,
+          "status" "OvertimeStatus" DEFAULT 'PENDING',
+          "overtimeRate" DECIMAL(10,2),
+          "calculatedAmount" DECIMAL(12,2),
+          "managerComments" TEXT,
+          "hrComments" TEXT,
+          "rejectionReason" TEXT,
+          "submittedAt" TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+          "managerApprovedAt" TIMESTAMP,
+          "hrApprovedAt" TIMESTAMP,
+          "finalizedAt" TIMESTAMP,
+          "createdAt" TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+          "updatedAt" TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+          CONSTRAINT "overtime_request_employeeId_fkey" FOREIGN KEY ("employeeId") REFERENCES "employees"("id") ON DELETE CASCADE,
+          CONSTRAINT "overtime_request_attendanceId_fkey" FOREIGN KEY ("attendanceId") REFERENCES "attendances"("id") ON DELETE SET NULL
+        );
+      `);
+
+      // Create overtime_approval table
+      await tenantClient.query(`
+        CREATE TABLE IF NOT EXISTS "overtime_approval" (
+          "id" BIGSERIAL PRIMARY KEY,
+          "overtimeRequestId" BIGINT NOT NULL,
+          "approverId" BIGINT NOT NULL,
+          "approverType" VARCHAR(20) NOT NULL,
+          "status" "ApprovalStatus" DEFAULT 'PENDING',
+          "comments" TEXT,
+          "approvedAt" TIMESTAMP,
+          "createdAt" TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+          "updatedAt" TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+          CONSTRAINT "overtime_approval_overtimeRequestId_fkey" FOREIGN KEY ("overtimeRequestId") REFERENCES "overtime_request"("id") ON DELETE CASCADE,
+          CONSTRAINT "overtime_approval_approverId_fkey" FOREIGN KEY ("approverId") REFERENCES "employees"("id") ON DELETE CASCADE,
+          UNIQUE ("overtimeRequestId", "approverId", "approverType")
+        );
+      `);
+
+      // Create indexes for overtime tables
+      await tenantClient.query(`
+        CREATE INDEX IF NOT EXISTS "idx_overtime_request_employee" ON "overtime_request"("employeeId");
+      `);
+
+      await tenantClient.query(`
+        CREATE INDEX IF NOT EXISTS "idx_overtime_request_status" ON "overtime_request"("status");
+      `);
+
+      await tenantClient.query(`
+        CREATE INDEX IF NOT EXISTS "idx_overtime_request_date" ON "overtime_request"("date");
+      `);
+
+      await tenantClient.query(`
+        CREATE INDEX IF NOT EXISTS "idx_overtime_request_attendance" ON "overtime_request"("attendanceId");
+      `);
+
+      await tenantClient.query(`
+        CREATE INDEX IF NOT EXISTS "idx_overtime_request_submitted" ON "overtime_request"("submittedAt");
+      `);
+
+      await tenantClient.query(`
+        CREATE INDEX IF NOT EXISTS "idx_overtime_approval_request" ON "overtime_approval"("overtimeRequestId");
+      `);
+
+      await tenantClient.query(`
+        CREATE INDEX IF NOT EXISTS "idx_overtime_approval_approver" ON "overtime_approval"("approverId");
+      `);
+
+      await tenantClient.query(`
+        CREATE INDEX IF NOT EXISTS "idx_overtime_approval_status" ON "overtime_approval"("status");
+      `);
+
+      // Create payrolls table
+      await tenantClient.query(`
+        CREATE TABLE IF NOT EXISTS "payrolls" (
+          "id" BIGSERIAL PRIMARY KEY,
+          "employeeId" BIGINT NOT NULL,
+          "periodStart" DATE NOT NULL,
+          "periodEnd" DATE NOT NULL,
+          "baseSalary" DECIMAL(15,2) NOT NULL,
+          "overtimePay" DECIMAL(15,2) DEFAULT 0,
+          "deductions" DECIMAL(15,2) DEFAULT 0,
+          "bonuses" DECIMAL(15,2) DEFAULT 0,
+          "grossSalary" DECIMAL(15,2) NOT NULL,
+          "netSalary" DECIMAL(15,2) NOT NULL,
+          "overtimeHours" DECIMAL(10,2) DEFAULT 0,
+          "regularHours" DECIMAL(10,2) DEFAULT 0,
+          "isPaid" BOOLEAN DEFAULT false,
+          "processedAt" TIMESTAMP,
+          "processedBy" BIGINT,
+          "notes" TEXT,
+          "paidAt" TIMESTAMP,
+          "processorId" BIGINT,
+          "createdAt" TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+          "updatedAt" TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+          CONSTRAINT "payrolls_employeeId_fkey" FOREIGN KEY ("employeeId") REFERENCES "employees"("id") ON DELETE CASCADE,
+          CONSTRAINT "payrolls_processorId_fkey" FOREIGN KEY ("processorId") REFERENCES "users"("id") ON DELETE SET NULL
+        );
+      `);
+
+      // Create indexes for payrolls
+      await tenantClient.query(`
+        CREATE INDEX IF NOT EXISTS "idx_payrolls_employee" ON "payrolls"("employeeId");
+      `);
+
+      await tenantClient.query(`
+        CREATE INDEX IF NOT EXISTS "idx_payrolls_period" ON "payrolls"("periodStart", "periodEnd");
+      `);
+
+      await tenantClient.query(`
+        CREATE INDEX IF NOT EXISTS "idx_payrolls_paid" ON "payrolls"("isPaid");
+      `);
+
+      await tenantClient.query(`
+        CREATE INDEX IF NOT EXISTS "idx_payrolls_employee_period" ON "payrolls"("employeeId", "periodStart" DESC);
+      `);
+
+      await tenantClient.query(`
+        CREATE INDEX IF NOT EXISTS "idx_payrolls_processed" ON "payrolls"("processedAt");
+      `);
+
+      // Create payslips table
+      await tenantClient.query(`
+        CREATE TABLE IF NOT EXISTS "payslips" (
+          "id" BIGSERIAL PRIMARY KEY,
+          "payrollId" BIGINT NOT NULL UNIQUE,
+          "grossSalary" DECIMAL(15,2) NOT NULL,
+          "overtimePay" DECIMAL(15,2) DEFAULT 0,
+          "bonuses" DECIMAL(15,2) DEFAULT 0,
+          "allowances" DECIMAL(15,2) DEFAULT 0,
+          "taxAmount" DECIMAL(15,2) DEFAULT 0,
+          "bpjsKesehatanEmployee" DECIMAL(15,2) DEFAULT 0,
+          "bpjsKesehatanCompany" DECIMAL(15,2) DEFAULT 0,
+          "bpjsKetenagakerjaanEmployee" DECIMAL(15,2) DEFAULT 0,
+          "bpjsKetenagakerjaanCompany" DECIMAL(15,2) DEFAULT 0,
+          "otherDeductions" DECIMAL(15,2) DEFAULT 0,
+          "takeHomePay" DECIMAL(15,2) NOT NULL,
+          "taxCalculationDetails" JSONB,
+          "pdfUrl" TEXT,
+          "generatedBy" BIGINT NOT NULL,
+          "generatedAt" TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+          "createdAt" TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+          "updatedAt" TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+          CONSTRAINT "payslips_payrollId_fkey" FOREIGN KEY ("payrollId") REFERENCES "payrolls"("id") ON DELETE CASCADE,
+          CONSTRAINT "payslips_generatedBy_fkey" FOREIGN KEY ("generatedBy") REFERENCES "users"("id") ON DELETE RESTRICT
+        );
+      `);
+
+      // Create payroll_deductions table
+      await tenantClient.query(`
+        CREATE TABLE IF NOT EXISTS "payroll_deductions" (
+          "id" BIGSERIAL PRIMARY KEY,
+          "payslipId" BIGINT NOT NULL,
+          "type" VARCHAR(50) NOT NULL,
+          "description" TEXT NOT NULL,
+          "amount" DECIMAL(15,2) NOT NULL,
+          "createdAt" TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+          CONSTRAINT "payroll_deductions_payslipId_fkey" FOREIGN KEY ("payslipId") REFERENCES "payslips"("id") ON DELETE CASCADE
+        );
+      `);
+
+      // Create indexes for payslips
+      await tenantClient.query(`
+        CREATE INDEX IF NOT EXISTS "idx_payslips_payroll" ON "payslips"("payrollId");
+      `);
+
+      await tenantClient.query(`
+        CREATE INDEX IF NOT EXISTS "idx_payslips_generated_at" ON "payslips"("generatedAt" DESC);
+      `);
+
+      await tenantClient.query(`
+        CREATE INDEX IF NOT EXISTS "idx_payslips_generator" ON "payslips"("generatedBy");
+      `);
+
+      await tenantClient.query(`
+        CREATE INDEX IF NOT EXISTS "idx_deductions_payslip" ON "payroll_deductions"("payslipId");
+      `);
+
+      await tenantClient.query(`
+        CREATE INDEX IF NOT EXISTS "idx_deductions_type" ON "payroll_deductions"("type");
       `);
 
       // Seed initial user if seedData provided

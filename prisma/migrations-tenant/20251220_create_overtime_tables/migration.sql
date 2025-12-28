@@ -35,7 +35,7 @@ CREATE TABLE IF NOT EXISTS "overtime_request" (
     "createdAt" TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     CONSTRAINT fk_overtime_request_employee FOREIGN KEY ("employeeId") REFERENCES "employees"(id) ON DELETE CASCADE,
-    CONSTRAINT fk_overtime_request_attendance FOREIGN KEY ("attendanceId") REFERENCES "attendance"(id) ON DELETE SET NULL
+    CONSTRAINT fk_overtime_request_attendance FOREIGN KEY ("attendanceId") REFERENCES "attendances"(id) ON DELETE SET NULL
 );
 
 -- Create overtime_approval table
