@@ -413,13 +413,15 @@ export class DatabaseTenantService {
       await tenantClient.query(`
         CREATE TABLE IF NOT EXISTS "holiday" (
           "id" BIGSERIAL PRIMARY KEY,
-          "attendancePeriodId" BIGINT NOT NULL,
+          "attendancePeriodId" BIGINT,
           "name" VARCHAR(255) NOT NULL,
           "date" DATE NOT NULL,
-          "isRecurring" BOOLEAN NOT NULL DEFAULT false,
-          "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
-          "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
-          CONSTRAINT "holiday_attendancePeriodId_fkey" FOREIGN KEY ("attendancePeriodId") REFERENCES "attendance_period"("id") ON DELETE CASCADE
+          "isNational" BOOLEAN DEFAULT false,
+          "isRecurring" BOOLEAN DEFAULT false,
+          "description" TEXT,
+          "createdAt" TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+          "updatedAt" TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+          CONSTRAINT "holiday_attendancePeriodId_fkey" FOREIGN KEY ("attendancePeriodId") REFERENCES "attendance_period"("id") ON DELETE SET NULL
         );
       `);
 
