@@ -17,47 +17,25 @@ services:
       timeout: 5s
       retries: 5
 
-  kafka:
-    image: apache/kafka:latest
-    container_name: broker
-    hostname: broker
+  rabbitmq:
+    image: rabbitmq:3-management-alpine
+    container_name: hr-app-rabbitmq
+    hostname: rabbitmq
     restart: always
     ports:
-      - "9093:9093"
+      - "5672:5672"   # AMQP port
+      - "15672:15672" # Management UI
     environment:
-      KAFKA_NODE_ID: 1
-      KAFKA_PROCESS_ROLES: broker,controller
-
-      KAFKA_LISTENERS: >
-        CLIENT://0.0.0.0:9093,
-        CONTROLLER://0.0.0.0:29093
-
-      KAFKA_ADVERTISED_LISTENERS: >
-        CLIENT://host.docker.internal:9093
-
-      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: >
-        CLIENT:PLAINTEXT,
-        CONTROLLER:PLAINTEXT
-
-      KAFKA_INTER_BROKER_LISTENER_NAME: CLIENT
-      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
-      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@broker:29093
-
-      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
-      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
-      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
-      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
-
+      RABBITMQ_DEFAULT_USER: hrapp
+      RABBITMQ_DEFAULT_PASS: hrapp123
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
     healthcheck:
-      test:
-        [
-          "CMD-SHELL",
-          "/opt/kafka/bin/kafka-topics.sh --bootstrap-server host.docker.internal:9093 --list"
-        ]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-
+      test: ["CMD", "rabbitmq-diagnostics", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
 volumes:
   postgres_data:
+  rabbitmq_data:

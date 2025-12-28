@@ -16,26 +16,29 @@ async function bootstrap() {
   const app = await NestFactory.create(AppModule);
 
   const configService = app.get(ConfigService);
-  const broker = configService.get<string>('KAFKA_BROKER');
+  const rabbitmqUrl = configService.get<string>('RABBITMQ_URL');
 
-  console.log(broker);
-  console.log('→ Attempting to connect to Kafka broker...');
-  if (!broker) {
-    throw new Error('KAFKA_BROKER is not defined');
+  console.log('='.repeat(60));
+  console.log('🚀 HR App Backend - Starting...');
+  console.log('='.repeat(60));
+
+  // Connect RabbitMQ microservice as hybrid app (graceful handling)
+  if (rabbitmqUrl) {
+    console.log(`→ RabbitMQ URL: ${rabbitmqUrl}`);
+    
+    app.connectMicroservice<MicroserviceOptions>({
+      transport: Transport.RMQ,
+      options: {
+        urls: [rabbitmqUrl],
+        queue: 'hr_app_queue',
+        queueOptions: {
+          durable: true,
+        },
+      },
+    });
+  } else {
+    console.log('⚠ RABBITMQ_URL not configured - RabbitMQ disabled');
   }
-  // Connect Kafka microservice as hybrid app
-  app.connectMicroservice<MicroserviceOptions>({
-    transport: Transport.KAFKA,
-    options: {
-      client: {
-        clientId: 'hr-app-consumer',
-        brokers: [broker],
-      },
-      consumer: {
-        groupId: 'hr-app-attendance-group',
-      },
-    },
-  });
 
   // Enable validation with detailed error messages
   app.useGlobalPipes(
@@ -91,19 +94,28 @@ async function bootstrap() {
   
   // Start HTTP server first
   await app.listen(port);
-  console.log(`✓ HTTP server started on http://localhost:${port}`);
-  console.log(`✓ Swagger documentation available at http://localhost:${port}/api`);
-  console.log(`✓ WebSocket server running on ws://localhost:${port}/attendance`);
+  console.log('='.repeat(60));
+  console.log(`✓ HTTP server: http://localhost:${port}`);
+  console.log(`✓ Swagger docs: http://localhost:${port}/api`);
+  console.log(`✓ WebSocket: ws://localhost:${port}/attendance`);
+  console.log('='.repeat(60));
   
-  // Start Kafka microservice in background (deferred)
-  app.startAllMicroservices()
-    .then(() => {
-      console.log('✓ Kafka microservice connected');
-      console.log(`✓ Kafka consumer group: hr-app-attendance-group`);
-    })
-    .catch((error) => {
-      console.error('✗ Failed to start Kafka microservice:', error.message);
-      console.log('→ Application will continue without Kafka');
-    });
+  // Start RabbitMQ microservice in background (non-blocking)
+  if (rabbitmqUrl) {
+    app.startAllMicroservices()
+      .then(() => {
+        console.log('✓ RabbitMQ microservice connected');
+        console.log(`✓ Queue: hr_app_queue`);
+        console.log('='.repeat(60));
+      })
+      .catch((error) => {
+        console.error('✗ RabbitMQ connection failed:', error.message);
+        console.log('→ Application continues without RabbitMQ');
+        console.log('='.repeat(60));
+      });
+  } else {
+    console.log('→ RabbitMQ microservice disabled');
+    console.log('='.repeat(60));
+  }
 }
 bootstrap();

@@ -11,7 +11,7 @@ services:
       - .env
     environment:
       DATABASE_URL: postgresql://${POSTGRES_USER:-hrapp}:${POSTGRES_PASSWORD:-hrapp123}@host.docker.internal:5432/${POSTGRES_DB:-hr_app_db}?schema=public
-      KAFKA_BROKER: ${KAFKA_BROKER:-host.docker.internal:9093}
+      RABBITMQ_URL: ${RABBITMQ_URL:-amqp://hrapp:hrapp123@host.docker.internal:5672}
       NODE_ENV: ${NODE_ENV:-production}
     volumes:
       - ./uploads:/app/uploads

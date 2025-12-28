@@ -9,7 +9,7 @@ import { AttendanceStatus, AttendanceType } from '../repositories/attendance.rep
 import { SettingsService } from '../../settings/services/settings.service';
 import { validateLocation, isValidCoordinates } from '../../../common/utils/location.util';
 import { AttendanceRepository } from '../repositories/attendance.repository';
-import { KafkaProducerService } from '../../../common/services/kafka-producer.service';
+import { RabbitMQProducerService } from '../../../common/services/rabbitmq-producer.service';
 import { ATTENDANCE_EVENTS } from '../../../common/events/attendance.events';
 
 @Injectable()
@@ -18,7 +18,7 @@ export class AttendanceService {
     private attendanceRepository: AttendanceRepository,
     private attendancePeriodService: AttendancePeriodService,
     private settingsService: SettingsService,
-    private kafkaProducer: KafkaProducerService,
+    private rabbitmqProducer: RabbitMQProducerService,
   ) {}
 
   /**
@@ -573,7 +573,7 @@ export class AttendanceService {
         ...dashboardData,
       };
 
-      console.log(`[AttendanceService] 🚀 Sending to Kafka - Event: ${ATTENDANCE_EVENTS.DASHBOARD_UPDATE}`);
+      console.log(`[AttendanceService] 🚀 Sending to RabbitMQ - Event: ${ATTENDANCE_EVENTS.DASHBOARD_UPDATE}`);
       console.log(`[AttendanceService] 📊 Payload summary:`, {
         tenantSlug,
         presentCount: dashboardData.presentEmployees?.length || 0,
@@ -581,9 +581,9 @@ export class AttendanceService {
         lateCount: dashboardData.lateEmployees?.length || 0,
       });
 
-      // Emit to Kafka - will be consumed by EventPattern controller
-      this.kafkaProducer.emit(ATTENDANCE_EVENTS.DASHBOARD_UPDATE, eventPayload);
-      console.log(`[AttendanceService] ✅ Kafka emit completed`);
+      // Emit to RabbitMQ - will be consumed by EventPattern controller
+      this.rabbitmqProducer.emit(ATTENDANCE_EVENTS.DASHBOARD_UPDATE, eventPayload);
+      console.log(`[AttendanceService] ✅ RabbitMQ emit completed`);
     } catch (error) {
       // Don't block attendance process if dashboard update fails
       console.error('[AttendanceService] ❌ Failed to send dashboard update:', error);

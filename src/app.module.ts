@@ -16,7 +16,7 @@ import { OvertimeModule } from './modules/overtime/overtime.module';
 import { SalaryModule } from './modules/salary/salary.module';
 import { PayrollModule } from './modules/payroll/payroll.module';
 import { PayslipModule } from './modules/payslip/payslip.module';
-import { KafkaModule } from './common/modules/kafka.module';
+import { RabbitMQModule } from './common/modules/rabbitmq.module';
 
 @Module({
   imports: [
@@ -25,7 +25,7 @@ import { KafkaModule } from './common/modules/kafka.module';
       envFilePath: '.env',
     }),
     EventEmitterModule.forRoot(),
-    KafkaModule,
+    RabbitMQModule,
     DatabaseModule,
     AuthModule,
     TenantModule,

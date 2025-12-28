@@ -1,11 +1,10 @@
-// Event constants for attendance module
-export const ATTENDANCE_EVENTS = {
-  CLOCK_IN: 'attendance.clock_in',
-  CLOCK_OUT: 'attendance.clock_out',
-  DASHBOARD_UPDATE: 'attendance.dashboard_update',
-  LATE_ARRIVAL: 'attendance.late_arrival',
-  EARLY_LEAVE: 'attendance.early_leave',
-} as const;
+import { RABBITMQ_QUEUES } from '../constants/rabbitmq-queues';
+
+/**
+ * Event constants for attendance module
+ * Using centralized RabbitMQ queue names
+ */
+export const ATTENDANCE_EVENTS = RABBITMQ_QUEUES.ATTENDANCE;
 
 // Event payload interfaces
 export interface AttendanceClockInEvent {

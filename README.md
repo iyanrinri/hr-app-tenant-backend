@@ -23,7 +23,7 @@
 
 ## Description
 
-[Nest](https://github.com/nestjs/nest) framework TypeScript starter repository.
+Multi-tenant HR Application Backend built with NestJS, PostgreSQL, and Kafka.
 
 ## Project setup
 
@@ -31,18 +31,99 @@
 $ pnpm install
 ```
 
+## Infrastructure Setup
+
+### 1. Start Database & Kafka
+
+```bash
+# Start PostgreSQL and Kafka
+$ docker-compose -f docker-compose-db.yml up -d
+
+# Verify containers are running
+$ docker ps
+```
+
+### 2. Create Kafka Topics (Required!)
+
+```bash
+# Create all required topics
+$ pnpm run kafka:create-topics
+
+# Or manually verify topics
+$ pnpm run kafka:list-topics
+```
+
+**Important:** Topics must exist before starting the application. See [Kafka Setup Guide](docs/KAFKA_SETUP.md) for details.
+
+### 3. Run Database Migrations
+
+```bash
+# Generate Prisma client
+$ pnpm prisma generate
+
+# Run migrations
+$ pnpm prisma migrate deploy
+
+# Run tenant migrations
+$ pnpm run migrate:tenants
+```
+
 ## Compile and run the project
 
 ```bash
 # development
-$ pnpm run start
-
-# watch mode
 $ pnpm run start:dev
 
-# production mode
-$ pnpm run start:prod
+# production mode (via Docker)
+$ docker-compose up -d --build
+
+# View logs
+$ docker logs -f hr-app-backend
 ```
+
+## Quick Start (All-in-One)
+
+```bash
+# 1. Start infrastructure
+docker-compose -f docker-compose-db.yml up -d
+
+# 2. Create Kafka topics
+pnpm run kafka:create-topics
+
+# 3. Setup database
+pnpm prisma generate
+pnpm prisma migrate deploy
+pnpm run migrate:tenants
+
+# 4. Start app
+pnpm run start:dev
+```
+
+## Environment Variables
+
+Create a `.env` file:
+
+```env
+# Database
+DATABASE_URL=postgresql://hrapp:hrapp123@localhost:5432/hr_app_db?schema=public
+
+# Kafka
+KAFKA_BROKER=host.docker.internal:9093
+
+# Application
+PORT=3000
+NODE_ENV=development
+
+# JWT
+JWT_SECRET=your-secret-key
+JWT_EXPIRATION=1d
+```
+
+## Documentation
+
+- 📖 [Kafka Setup Guide](docs/KAFKA_SETUP.md) - Vendor-friendly Kafka configuration
+- 🔐 API Documentation: `http://localhost:3000/api` (Swagger)
+- 🔌 WebSocket: `ws://localhost:3000/attendance`
 
 ## Run tests
 
