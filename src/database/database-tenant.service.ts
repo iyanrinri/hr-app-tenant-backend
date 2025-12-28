@@ -15,7 +15,7 @@ export class DatabaseTenantService {
       password: this.configService.get<string>('DB_PASSWORD') || 'hrapp123',
       host: this.configService.get<string>('DB_HOST') || 'localhost',
       port: this.configService.get<number>('DB_PORT') || 5432,
-      database: 'postgres', // Connect to default postgres database for admin operations
+      database: 'postgres',
     });
   }
 
@@ -44,20 +44,22 @@ export class DatabaseTenantService {
         return;
       }
 
-      // Create database
+      // Create empty database
       await client.query(`CREATE DATABASE "${databaseName}"`);
-      this.logger.log(`Database ${databaseName} created successfully`);
+      this.logger.log(`✅ Empty database ${databaseName} created`);
 
-      // Create schema on the new database
-      await this.createTenantSchema(databaseName);
+      // Create migrations_log table only
+      await this.createMigrationsLogTable(databaseName);
 
-      // Run migrations automatically after schema creation
+      // Run ALL migrations to create all tables
       await this.runTenantMigrations(databaseName);
 
       // Seed initial user AFTER migrations complete
       if (seedData) {
         await this.seedInitialUser(databaseName, seedData);
       }
+
+      this.logger.log(`✅ Tenant database ${databaseName} setup complete`);
     } catch (error) {
       this.logger.error(`Error creating database ${databaseName}:`, error);
       throw error;
@@ -66,7 +68,10 @@ export class DatabaseTenantService {
     }
   }
 
-  private async createTenantSchema(databaseName: string): Promise<void> {
+  /**
+   * Create only migrations_log table - all other tables created by migrations
+   */
+  private async createMigrationsLogTable(databaseName: string): Promise<void> {
     const dbUser = this.configService.get<string>('DB_USER') || 'hrapp';
     const dbPassword = this.configService.get<string>('DB_PASSWORD') || 'hrapp123';
     const dbHost = this.configService.get<string>('DB_HOST') || 'localhost';
@@ -83,10 +88,6 @@ export class DatabaseTenantService {
     const tenantClient = await tenantPool.connect();
 
     try {
-      this.logger.log(`Creating migrations_log table for ${databaseName}...`);
-
-      // ONLY create migrations_log table
-      // All other tables will be created by migration files
       await tenantClient.query(`
         CREATE TABLE IF NOT EXISTS "migrations_log" (
           "id" BIGSERIAL PRIMARY KEY,
@@ -100,12 +101,115 @@ export class DatabaseTenantService {
         CREATE INDEX IF NOT EXISTS "idx_migrations_log_name" ON "migrations_log"("migration_name");
       `);
 
-      this.logger.log(`✅ migrations_log table created - ready for migrations`);
+      this.logger.log(`✅ migrations_log table created for ${databaseName}`);
     } catch (error) {
-      this.logger.error(`Error creating migrations_log for ${databaseName}:`, error);
+      this.logger.error(`Error creating migrations_log:`, error);
       throw error;
     } finally {
       tenantClient.release();
+      await tenantPool.end();
+    }
+  }
+
+  /**
+   * Run all migration files to create tables
+   */
+  private async runTenantMigrations(databaseName: string): Promise<void> {
+    const dbUser = this.configService.get<string>('DB_USER') || 'hrapp';
+    const dbPassword = this.configService.get<string>('DB_PASSWORD') || 'hrapp123';
+    const dbHost = this.configService.get<string>('DB_HOST') || 'localhost';
+    const dbPort = this.configService.get<number>('DB_PORT') || 5432;
+
+    const tenantPool = new pg.Pool({
+      user: dbUser,
+      password: dbPassword,
+      host: dbHost,
+      port: dbPort,
+      database: databaseName,
+    });
+
+    try {
+      this.logger.log(`🔄 Running migrations for ${databaseName}...`);
+
+      // Get all migration directories
+      const migrationsDir = path.join(process.cwd(), 'prisma', 'migrations-tenant');
+      
+      if (!fs.existsSync(migrationsDir)) {
+        this.logger.warn(`Migrations directory not found: ${migrationsDir}`);
+        return;
+      }
+
+      const migrationFolders = fs
+        .readdirSync(migrationsDir, { withFileTypes: true })
+        .filter(entry => entry.isDirectory())
+        .map(entry => entry.name)
+        .sort();
+
+      this.logger.log(`Found ${migrationFolders.length} migration(s)`);
+
+      // Run each migration
+      for (const folder of migrationFolders) {
+        const migrationFile = path.join(migrationsDir, folder, 'migration.sql');
+        
+        if (!fs.existsSync(migrationFile)) {
+          continue;
+        }
+
+        try {
+          // Check if already executed
+          const checkResult = await tenantPool.query(
+            `SELECT 1 FROM migrations_log WHERE migration_name = $1 LIMIT 1`,
+            [folder]
+          );
+
+          if (checkResult.rows.length > 0) {
+            this.logger.log(`  ⏭️  ${folder} (already executed)`);
+            continue;
+          }
+
+          const migrationSQL = fs.readFileSync(migrationFile, 'utf-8');
+          
+          this.logger.log(`  🔄 Running ${folder}...`);
+          
+          // Execute migration
+          await tenantPool.query(migrationSQL);
+
+          // Record migration
+          await tenantPool.query(
+            `INSERT INTO migrations_log (migration_name, executed_at) VALUES ($1, NOW())`,
+            [folder]
+          );
+
+          this.logger.log(`  ✅ ${folder} completed`);
+        } catch (error: any) {
+          // Ignore "already exists" errors
+          if (
+            error.code === '42P07' || // relation already exists
+            error.code === '42710' || // object already exists
+            error.code === '42P01'    // migrations_log doesn't exist yet
+          ) {
+            this.logger.log(`  ⚠️  ${folder} (object already exists)`);
+            try {
+              await tenantPool.query(
+                `INSERT INTO migrations_log (migration_name, executed_at) VALUES ($1, NOW()) ON CONFLICT (migration_name) DO NOTHING`,
+                [folder]
+              );
+            } catch (recordError) {
+              // Ignore
+            }
+            continue;
+          }
+
+          this.logger.error(`  ❌ ${folder} failed:`, error.message);
+          throw error;
+        }
+      }
+
+      this.logger.log(`✅ All migrations completed for ${databaseName}`);
+    } catch (error) {
+      this.logger.error(`Error running migrations:`, error);
+      throw error;
+    } finally {
       await tenantPool.end();
     }
   }
@@ -139,208 +243,37 @@ export class DatabaseTenantService {
     const tenantClient = await tenantPool.connect();
 
     try {
-      this.logger.log(`Creating minimal schema for ${databaseName}...`);
+      // Check if user already exists
+      const existingUser = await tenantClient.query(
+        `SELECT 1 FROM "users" WHERE "email" = $1 LIMIT 1`,
+        [seedData.email]
+      );
 
-      // Create migrations_log table FIRST so we can track migrations
-      await tenantClient.query(`
-        CREATE TABLE IF NOT EXISTS "migrations_log" (
-          "id" BIGSERIAL PRIMARY KEY,
-          "migration_name" VARCHAR(255) NOT NULL UNIQUE,
-          "executed_at" TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-          "status" VARCHAR(50) DEFAULT 'SUCCESS'
-        );
-      `);
-
-      await tenantClient.query(`
-        CREATE INDEX IF NOT EXISTS "idx_migrations_log_name" ON "migrations_log"("migration_name");
-      `);
-
-      this.logger.log(`migrations_log table created for ${databaseName}`);
-
-      // Create Role enum
-      await tenantClient.query(`
-        DO $$ BEGIN
-          CREATE TYPE "Role" AS ENUM ('ADMIN', 'HR', 'MANAGER', 'EMPLOYEE');
-        EXCEPTION
-          WHEN duplicate_object THEN null;
-        END $$;
-      `);
-
-      // Create SalaryChangeType enum
-      await tenantClient.query(`
-        DO $$ BEGIN
-          CREATE TYPE "SalaryChangeType" AS ENUM ('INITIAL', 'PROMOTION', 'GRADE_ADJUSTMENT', 'PERFORMANCE_INCREASE', 'MARKET_ADJUSTMENT', 'DEPARTMENT_TRANSFER', 'POSITION_CHANGE', 'ANNUAL_INCREMENT');
-        EXCEPTION
-          WHEN duplicate_object THEN null;
-        END $$;
-      `);
-
-      // Create users table (minimal, migrations will add more if needed)
-      await tenantClient.query(`
-        CREATE TABLE IF NOT EXISTS "users" (
-          "id" BIGSERIAL NOT NULL,
-          "email" TEXT NOT NULL UNIQUE,
-          "password" TEXT NOT NULL,
-          "firstName" TEXT NOT NULL,
-          "lastName" TEXT NOT NULL,
-          "role" "Role" NOT NULL DEFAULT 'EMPLOYEE',
-          "isActive" BOOLEAN NOT NULL DEFAULT true,
-          "deletedAt" TIMESTAMP(3),
-          "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
-          "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
-          CONSTRAINT "users_pkey" PRIMARY KEY ("id")
-        );
-      `);
-
-      this.logger.log(`users table created for ${databaseName}`);
-
-      // Create employees table (minimal, migrations will add more if needed)
-      await tenantClient.query(`
-        CREATE TABLE IF NOT EXISTS "employees" (
-          "id" BIGSERIAL NOT NULL,
-          "userId" BIGINT,
-          "managerId" BIGINT,
-          
-          -- Basic Information
-          "firstName" TEXT NOT NULL,
-          "lastName" TEXT NOT NULL,
-          "position" TEXT NOT NULL,
-          "department" TEXT NOT NULL,
-          "joinDate" TIMESTAMP(3) NOT NULL,
-          
-          -- Personal Information
-          "employeeNumber" TEXT UNIQUE,
-          "dateOfBirth" TIMESTAMP(3),
-          "gender" TEXT,
-          "maritalStatus" TEXT,
-          "nationality" TEXT,
-          "religion" TEXT,
-          "bloodType" TEXT,
-          "idNumber" TEXT UNIQUE,
-          "taxNumber" TEXT UNIQUE,
-          
-          -- Contact Information
-          "phoneNumber" TEXT,
-          "alternativePhone" TEXT,
-          "address" TEXT,
-          "city" TEXT,
-          "province" TEXT,
-          "postalCode" TEXT,
-          "emergencyContactName" TEXT,
-          "emergencyContactPhone" TEXT,
-          "emergencyContactRelation" TEXT,
-          
-          -- Bank Information
-          "bankName" TEXT,
-          "bankAccountNumber" TEXT,
-          "bankAccountName" TEXT,
-          
-          -- Employment Details
-          "employmentStatus" TEXT,
-          "contractStartDate" TIMESTAMP(3),
-          "contractEndDate" TIMESTAMP(3),
-          "workLocation" TEXT,
-          "baseSalary" NUMERIC(15, 2),
-          
-          -- Profile
-          "profilePicture" TEXT,
-          
-          -- Status & Audit
-          "isActive" BOOLEAN NOT NULL DEFAULT true,
-          "deletedAt" TIMESTAMP(3),
-          "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
-          "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
-          
-          CONSTRAINT "employees_pkey" PRIMARY KEY ("id"),
-          CONSTRAINT "employees_userId_unique" UNIQUE ("userId"),
-          CONSTRAINT "employees_managerId_fk" FOREIGN KEY ("managerId") REFERENCES "employees"("id") ON DELETE SET NULL
-        );
-      this.logger.log(`employees table created for ${databaseName}`);
-
-      `);
-
-      // Create indexes
-      await tenantClient.query(`
-        CREATE UNIQUE INDEX IF NOT EXISTS "users_email_key" ON "users"("email");
-      `);
-
-      await tenantClient.query(`
-        CREATE UNIQUE INDEX IF NOT EXISTS "employees_userId_unique" ON "employees"("userId");
-      `);
-
-      await tenantClient.query(`
-        CREATE INDEX IF NOT EXISTS "employees_firstName_idx" ON "employees"("firstName");
-      `);
-
-      await tenantClient.query(`
-        CREATE INDEX IF NOT EXISTS "employees_lastName_idx" ON "employees"("lastName");
-      `);
-
-      await tenantClient.query(`
-        CREATE INDEX IF NOT EXISTS "employees_position_idx" ON "employees"("position");
-      `);
-
-      await tenantClient.query(`
-        CREATE INDEX IF NOT EXISTS "employees_department_idx" ON "employees"("department");
-      `);
-
-      await tenantClient.query(`
-        CREATE INDEX IF NOT EXISTS "employees_managerId_idx" ON "employees"("managerId");
-      `);
-
-      await tenantClient.query(`
-        CREATE INDEX IF NOT EXISTS "employees_isActive_idx" ON "employees"("isActive");
-      `);
-
-      await tenantClient.query(`
-        CREATE INDEX IF NOT EXISTS "employees_deletedAt_idx" ON "employees"("deletedAt");
-      `);
-
-      // Create foreign key
-      await tenantClient.query(`
-        DO $$ BEGIN
-          ALTER TABLE "employees" ADD CONSTRAINT "employees_userId_fkey" 
-            FOREIGN KEY ("userId") REFERENCES "users"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
-        EXCEPTION
-          WHEN duplicate_object THEN null;
-        END $$;
-      `);
-
-      this.logger.log(`Basic schema structure created for ${databaseName}`);
-
-      // Seed initial user if seedData provided
-      if (seedData) {
-        try {
-          const insertResult = await tenantClient.query(
-            `
-            INSERT INTO "users" ("email", "firstName", "lastName", "password", "role", "isActive", "createdAt", "updatedAt")
-            VALUES ($1, $2, $3, $4, $5, $6, NOW(), NOW());
-            `,
-            [
-              seedData.email,
-              seedData.firstName,
-              seedData.lastName,
-              seedData.password,
-              'ADMIN',
-              true,
-            ],
-          );
-          this.logger.log(
-            `Initial user seeded for database ${databaseName} with email: ${seedData.email}, rows affected: ${insertResult.rowCount}`,
-          );
-        } catch (seedError) {
-          this.logger.error(
-            `Error seeding user to database ${databaseName}:`,
-            seedError,
-          );
-          throw seedError;
-        }
+      if (existingUser.rows.length > 0) {
+        this.logger.log(`User ${seedData.email} already exists, skipping seed`);
+        return;
       }
 
-      this.logger.log(`Schema created successfully for database ${databaseName}`);
-    } catch (error) {
-      this.logger.error(`Error creating schema for database ${databaseName}:`, error);
-      throw error;
+      // Insert initial admin user
+      await tenantClient.query(
+        `
+        INSERT INTO "users" ("email", "firstName", "lastName", "password", "role", "isActive", "createdAt", "updatedAt")
+        VALUES ($1, $2, $3, $4, $5, $6, NOW(), NOW());
+        `,
+        [
+          seedData.email,
+          seedData.firstName,
+          seedData.lastName,
+          seedData.password,
+          'ADMIN',
+          true,
+        ],
+      );
+
+      this.logger.log(`✅ Initial admin user created: ${seedData.email}`);
+    } catch (seedError) {
+      this.logger.error(`Error seeding user:`, seedError);
+      throw seedError;
     } finally {
       tenantClient.release();
       await tenantPool.end();
@@ -352,7 +285,7 @@ export class DatabaseTenantService {
     const client = await this.pool.connect();
 
     try {
-      // Terminate all connections to the database
+      // Terminate all connections
       await client.query(
         `SELECT pg_terminate_backend(pg_stat_activity.pid)
          FROM pg_stat_activity
@@ -369,109 +302,6 @@ export class DatabaseTenantService {
       throw error;
     } finally {
       client.release();
-    }
-  }
-
-  private async runTenantMigrations(databaseName: string): Promise<void> {
-    const dbUser = this.configService.get<string>('DB_USER') || 'hrapp';
-    const dbPassword = this.configService.get<string>('DB_PASSWORD') || 'hrapp123';
-    const dbHost = this.configService.get<string>('DB_HOST') || 'localhost';
-    const dbPort = this.configService.get<number>('DB_PORT') || 5432;
-
-    const tenantPool = new pg.Pool({
-      user: dbUser,
-      password: dbPassword,
-      host: dbHost,
-      port: dbPort,
-      database: databaseName,
-    });
-
-    try {
-      this.logger.log(`Running migrations for database ${databaseName}...`);
-
-      // Get all migration directories
-      const migrationsDir = path.join(process.cwd(), 'prisma', 'migrations-tenant');
-      
-      if (!fs.existsSync(migrationsDir)) {
-        this.logger.warn(`Migrations directory not found: ${migrationsDir}`);
-        return;
-      }
-
-      const migrationFolders = fs
-        .readdirSync(migrationsDir, { withFileTypes: true })
-        .filter(entry => entry.isDirectory())
-        .map(entry => entry.name)
-        .sort();
-
-      this.logger.log(`Found ${migrationFolders.length} migration(s) to run`);
-
-      // Run each migration
-      for (const folder of migrationFolders) {
-        const migrationFile = path.join(migrationsDir, folder, 'migration.sql');
-        
-        if (!fs.existsSync(migrationFile)) {
-          this.logger.warn(`Migration file not found: ${migrationFile}`);
-          continue;
-        }
-
-        const migrationSQL = fs.readFileSync(migrationFile, 'utf-8');
-        
-        try {
-          // Check if migration already executed
-          const checkResult = await tenantPool.query(
-            `SELECT 1 FROM migrations_log WHERE migration_name = $1 LIMIT 1`,
-            [folder]
-          );
-
-          if (checkResult.rows.length > 0) {
-            this.logger.log(`  ⏭️  ${folder} (already executed)`);
-            continue;
-          }
-
-          this.logger.log(`  🔄 Running ${folder}...`);
-          
-          // Execute migration SQL
-          await tenantPool.query(migrationSQL);
-
-          // Record migration
-          await tenantPool.query(
-            `INSERT INTO migrations_log (migration_name, executed_at) VALUES ($1, NOW())`,
-            [folder]
-          );
-
-          this.logger.log(`  ✅ ${folder} completed`);
-        } catch (error: any) {
-          // Ignore certain "already exists" errors
-          if (
-            error.code === '42P07' || // relation already exists
-            error.code === '42710' || // object already exists
-            error.code === '42P01' // migrations_log table doesn't exist yet (will be created by migration)
-          ) {
-            this.logger.log(`  ⚠️  ${folder} (object already exists, continuing...)`);
-            
-            // Try to record migration even if table didn't exist before
-            try {
-              await tenantPool.query(
-                `INSERT INTO migrations_log (migration_name, executed_at) VALUES ($1, NOW()) ON CONFLICT (migration_name) DO NOTHING`,
-                [folder]
-              );
-            } catch (recordError) {
-              // Ignore if we can't record yet
-            }
-            continue;
-          }
-
-          this.logger.error(`  ❌ ${folder} failed:`, error.message);
-          throw error;
-        }
-      }
-
-      this.logger.log(`✅ All migrations completed for ${databaseName}`);
-    } catch (error) {
-      this.logger.error(`Error running migrations for ${databaseName}:`, error);
-      throw error;
-    } finally {
-      await tenantPool.end();
     }
   }
 
