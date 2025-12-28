@@ -1,6 +1,8 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import * as pg from 'pg';
+import * as fs from 'fs';
+import * as path from 'path';
 
 @Injectable()
 export class DatabaseTenantService {
@@ -48,6 +50,9 @@ export class DatabaseTenantService {
 
       // Create schema on the new database
       await this.createTenantSchema(databaseName, seedData);
+
+      // Run migrations automatically after schema creation
+      await this.runTenantMigrations(databaseName);
     } catch (error) {
       this.logger.error(`Error creating database ${databaseName}:`, error);
       throw error;
@@ -894,6 +899,109 @@ export class DatabaseTenantService {
       throw error;
     } finally {
       client.release();
+    }
+  }
+
+  private async runTenantMigrations(databaseName: string): Promise<void> {
+    const dbUser = this.configService.get<string>('DB_USER') || 'hrapp';
+    const dbPassword = this.configService.get<string>('DB_PASSWORD') || 'hrapp123';
+    const dbHost = this.configService.get<string>('DB_HOST') || 'localhost';
+    const dbPort = this.configService.get<number>('DB_PORT') || 5432;
+
+    const tenantPool = new pg.Pool({
+      user: dbUser,
+      password: dbPassword,
+      host: dbHost,
+      port: dbPort,
+      database: databaseName,
+    });
+
+    try {
+      this.logger.log(`Running migrations for database ${databaseName}...`);
+
+      // Get all migration directories
+      const migrationsDir = path.join(process.cwd(), 'prisma', 'migrations-tenant');
+      
+      if (!fs.existsSync(migrationsDir)) {
+        this.logger.warn(`Migrations directory not found: ${migrationsDir}`);
+        return;
+      }
+
+      const migrationFolders = fs
+        .readdirSync(migrationsDir, { withFileTypes: true })
+        .filter(entry => entry.isDirectory())
+        .map(entry => entry.name)
+        .sort();
+
+      this.logger.log(`Found ${migrationFolders.length} migration(s) to run`);
+
+      // Run each migration
+      for (const folder of migrationFolders) {
+        const migrationFile = path.join(migrationsDir, folder, 'migration.sql');
+        
+        if (!fs.existsSync(migrationFile)) {
+          this.logger.warn(`Migration file not found: ${migrationFile}`);
+          continue;
+        }
+
+        const migrationSQL = fs.readFileSync(migrationFile, 'utf-8');
+        
+        try {
+          // Check if migration already executed
+          const checkResult = await tenantPool.query(
+            `SELECT 1 FROM migrations_log WHERE migration_name = $1 LIMIT 1`,
+            [folder]
+          );
+
+          if (checkResult.rows.length > 0) {
+            this.logger.log(`  ⏭️  ${folder} (already executed)`);
+            continue;
+          }
+
+          this.logger.log(`  🔄 Running ${folder}...`);
+          
+          // Execute migration SQL
+          await tenantPool.query(migrationSQL);
+
+          // Record migration
+          await tenantPool.query(
+            `INSERT INTO migrations_log (migration_name, executed_at) VALUES ($1, NOW())`,
+            [folder]
+          );
+
+          this.logger.log(`  ✅ ${folder} completed`);
+        } catch (error: any) {
+          // Ignore certain "already exists" errors
+          if (
+            error.code === '42P07' || // relation already exists
+            error.code === '42710' || // object already exists
+            error.code === '42P01' // migrations_log table doesn't exist yet (will be created by migration)
+          ) {
+            this.logger.log(`  ⚠️  ${folder} (object already exists, continuing...)`);
+            
+            // Try to record migration even if table didn't exist before
+            try {
+              await tenantPool.query(
+                `INSERT INTO migrations_log (migration_name, executed_at) VALUES ($1, NOW()) ON CONFLICT (migration_name) DO NOTHING`,
+                [folder]
+              );
+            } catch (recordError) {
+              // Ignore if we can't record yet
+            }
+            continue;
+          }
+
+          this.logger.error(`  ❌ ${folder} failed:`, error.message);
+          throw error;
+        }
+      }
+
+      this.logger.log(`✅ All migrations completed for ${databaseName}`);
+    } catch (error) {
+      this.logger.error(`Error running migrations for ${databaseName}:`, error);
+      throw error;
+    } finally {
+      await tenantPool.end();
     }
   }
 
