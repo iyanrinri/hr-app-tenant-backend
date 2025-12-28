@@ -10,8 +10,8 @@ services:
     env_file:
       - .env
     environment:
-      DATABASE_URL: postgresql://${POSTGRES_USER:-hrapp}:${POSTGRES_PASSWORD:-hrapp123}@host.docker.internal:5432/${POSTGRES_DB:-hr_app_db}?schema=public
-      RABBITMQ_URL: ${RABBITMQ_URL:-amqp://hrapp:hrapp123@host.docker.internal:5672}
+      DATABASE_URL: postgresql://${POSTGRES_USER:-hrapp}:${POSTGRES_PASSWORD:-hrapp123}@${POSTGRES_HOST:-host.docker.internal}:5432/${POSTGRES_DB:-hr_app_db}?schema=public
+      RABBITMQ_URL: ${RABBITMQ_URL:-amqp://hrapp:hrapp123@${RABBITMQ_HOST:-host.docker.internal}:5672}
       NODE_ENV: ${NODE_ENV:-production}
     volumes:
       - ./uploads:/app/uploads
