@@ -12,7 +12,7 @@ services:
     env_file:
       - .env
     environment:
-      DATABASE_URL: postgresql://${POSTGRES_USER:-hrapp}:${POSTGRES_PASSWORD:-hrapp123}@${POSTGRES_HOST:-host.docker.internal}:5432/${POSTGRES_DB:-hr_app_db}?schema=public
+      DATABASE_URL: postgresql://${DB_USER:-hrapp}:${DB_PASSWORD:-hrapp123}@${DB_HOST:-host.docker.internal}:5432/${DB_NAME:-hr_app_db}?schema=public
       RABBITMQ_URL: ${RABBITMQ_URL:-amqp://${RABBITMQ_USER:-hrapp}:${RABBITMQ_PASSWORD:-hrapp123}@${RABBITMQ_HOST:-host.docker.internal}:5672}
       NODE_ENV: ${NODE_ENV:-production}
     volumes:
