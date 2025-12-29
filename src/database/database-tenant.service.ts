@@ -3,6 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import * as pg from 'pg';
 import * as fs from 'fs';
 import * as path from 'path';
+import { randomUUID } from 'crypto';
 
 @Injectable()
 export class DatabaseTenantService {
@@ -255,12 +256,14 @@ export class DatabaseTenantService {
       }
 
       // Insert initial admin user
+      const userId = randomUUID();
       await tenantClient.query(
         `
-        INSERT INTO "users" ("email", "firstName", "lastName", "password", "role", "isActive", "createdAt", "updatedAt")
-        VALUES ($1, $2, $3, $4, $5, $6, NOW(), NOW());
+        INSERT INTO "users" ("id", "email", "firstName", "lastName", "password", "role", "isActive", "createdAt", "updatedAt")
+        VALUES ($1, $2, $3, $4, $5, $6, $7, NOW(), NOW());
         `,
         [
+          userId,
           seedData.email,
           seedData.firstName,
           seedData.lastName,

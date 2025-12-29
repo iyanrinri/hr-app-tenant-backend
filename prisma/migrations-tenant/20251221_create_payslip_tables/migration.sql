@@ -15,7 +15,7 @@ CREATE TABLE IF NOT EXISTS "payslips" (
     "takeHomePay" DECIMAL(15,2) NOT NULL,
     "taxCalculationDetails" JSONB,
     "pdfUrl" TEXT,
-    "generatedBy" BIGINT NOT NULL,
+    "generatedBy" TEXT NOT NULL,
     "generatedAt" TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     "createdAt" TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" TIMESTAMP DEFAULT CURRENT_TIMESTAMP,

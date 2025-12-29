@@ -157,12 +157,12 @@ async function isMigrationExecuted(
 ): Promise<boolean> {
   try {
     const result = await pool.query(
-      'SELECT success FROM migrations_log WHERE migration_name = $1',
+      'SELECT status FROM migrations_log WHERE migration_name = $1',
       [migrationName]
     );
     
     // Migration was executed and successful
-    if (result.rows.length > 0 && result.rows[0].success) {
+    if (result.rows.length > 0 && result.rows[0].status === 'SUCCESS') {
       return true;
     }
     
@@ -186,15 +186,15 @@ async function recordMigration(
   errorMessage?: string
 ): Promise<void> {
   try {
+    const status = success ? 'SUCCESS' : 'FAILED';
     await pool.query(
-      `INSERT INTO migrations_log (migration_name, success, error_message) 
-       VALUES ($1, $2, $3)
+      `INSERT INTO migrations_log (migration_name, status) 
+       VALUES ($1, $2)
        ON CONFLICT (migration_name) 
        DO UPDATE SET 
          executed_at = NOW(),
-         success = $2,
-         error_message = $3`,
-      [migrationName, success, errorMessage || null]
+         status = $2`,
+      [migrationName, status]
     );
   } catch (error: any) {
     // If migrations_log doesn't exist, skip recording (it will be created by its own migration)

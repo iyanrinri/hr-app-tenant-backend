@@ -1,15 +1,27 @@
--- Fix Role enum - update to include SUPER and HR roles
+-- Create Role enum with all values
 DO $$ BEGIN
-  ALTER TYPE "Role" ADD VALUE 'SUPER' BEFORE 'ADMIN';
-EXCEPTION
-  WHEN duplicate_object THEN null;
+  IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'Role') THEN
+    CREATE TYPE "Role" AS ENUM ('SUPER', 'ADMIN', 'HR', 'USER');
+  END IF;
 END $$;
 
-DO $$ BEGIN
-  ALTER TYPE "Role" ADD VALUE 'HR';
-EXCEPTION
-  WHEN duplicate_object THEN null;
-END $$;
+-- CreateTable for users (must exist first for FK)
+CREATE TABLE IF NOT EXISTS "users" (
+    "id" TEXT NOT NULL,
+    "email" TEXT NOT NULL,
+    "firstName" TEXT NOT NULL,
+    "lastName" TEXT NOT NULL,
+    "password" TEXT NOT NULL,
+    "role" "Role" NOT NULL DEFAULT 'USER',
+    "isActive" BOOLEAN NOT NULL DEFAULT true,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL,
+
+    CONSTRAINT "users_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateIndex for users
+CREATE UNIQUE INDEX IF NOT EXISTS "users_email_unique" ON "users"("email");
 
 -- CreateTable for employees (in master database)
 CREATE TABLE IF NOT EXISTS "employees" (
