@@ -49,7 +49,7 @@ async function getAllTenants(): Promise<any[]> {
  * Get all migration folders
  */
 function getAllMigrations(): string[] {
-  const migrationsDir = path.join(__dirname, '../migrations-tenant');
+  const migrationsDir = path.join(process.cwd(), 'prisma/migrations-tenant');
   
   if (!fs.existsSync(migrationsDir)) {
     throw new Error(`Migrations directory not found: ${migrationsDir}`);
@@ -71,8 +71,8 @@ function getAllMigrations(): string[] {
  */
 function getMigrationSQL(migrationName: string): string {
   const migrationPath = path.join(
-    __dirname,
-    `../migrations-tenant/${migrationName}/migration.sql`
+    process.cwd(),
+    `prisma/migrations-tenant/${migrationName}/migration.sql`
   );
   
   if (!fs.existsSync(migrationPath)) {
