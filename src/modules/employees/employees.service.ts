@@ -46,20 +46,26 @@ export class EmployeesService {
     const hashedPassword = await this.authService.hashPassword(password);
 
     try {
-      // Create user first using raw query - only basic fields
+      // Create user first using raw query - only basic fields (id auto-generated)
       const userInsertQuery = `
         INSERT INTO "users" (
           email, password, "firstName", "lastName", role, 
           "isActive", "createdAt", "updatedAt"
         )
         VALUES (
-          '${createEmployeeDto.email}', '${hashedPassword}', '${createEmployeeDto.firstName}', '${createEmployeeDto.lastName}', 'EMPLOYEE',
+          $1, $2, $3, $4, 'USER',
           true, NOW(), NOW()
         )
         RETURNING id, email, "firstName", "lastName", role, "isActive"
       `;
       
-      const userResult = await client.$queryRawUnsafe(userInsertQuery);
+      const userResult = await client.$queryRawUnsafe(
+        userInsertQuery,
+        createEmployeeDto.email,
+        hashedPassword,
+        createEmployeeDto.firstName,
+        createEmployeeDto.lastName
+      );
       const user = userResult[0];
 
       // Create employee linked to the user
@@ -69,14 +75,21 @@ export class EmployeesService {
           "isActive", "createdAt", "updatedAt"
         )
         VALUES (
-          ${user.id}, '${createEmployeeDto.firstName}', '${createEmployeeDto.lastName}',
-          '${createEmployeeDto.position}', '${createEmployeeDto.department}', '${new Date(createEmployeeDto.joinDate).toISOString()}',
+          $1, $2, $3, $4, $5, $6,
           true, NOW(), NOW()
         )
         RETURNING *
       `;
       
-      const employeeResult = await client.$queryRawUnsafe(employeeInsertQuery);
+      const employeeResult = await client.$queryRawUnsafe(
+        employeeInsertQuery,
+        user.id,
+        createEmployeeDto.firstName,
+        createEmployeeDto.lastName,
+        createEmployeeDto.position,
+        createEmployeeDto.department,
+        new Date(createEmployeeDto.joinDate).toISOString()
+      );
       const employee = employeeResult[0];
 
       // Create initial salary record if baseSalary is provided
@@ -88,12 +101,19 @@ export class EmployeesService {
             "employeeId", "baseSalary", allowances, "effectiveDate", "isActive", "createdBy", "createdAt", "updatedAt"
           )
           VALUES (
-            ${employee.id}, ${baseSalary}, ${allowances}, '${salaryEffectiveDate}', true, ${user.id}, NOW(), NOW()
+            $1, $2, $3, $4, true, $5, NOW(), NOW()
           )
           RETURNING id
         `;
         
-        await client.$queryRawUnsafe(salaryInsertQuery);
+        await client.$queryRawUnsafe(
+          salaryInsertQuery,
+          employee.id,
+          baseSalary,
+          allowances,
+          salaryEffectiveDate,
+          user.id
+        );
 
         // Create salary history record
         const historyInsertQuery = `
@@ -101,11 +121,17 @@ export class EmployeesService {
             "employeeId", "changeType", "newBaseSalary", reason, "effectiveDate", "approvedBy", "createdAt"
           )
           VALUES (
-            ${employee.id}, 'INITIAL', ${baseSalary}, 'Initial salary setup', '${salaryEffectiveDate}', ${user.id}, NOW()
+            $1, 'INITIAL', $2, 'Initial salary setup', $3, $4, NOW()
           )
         `;
         
-        await client.$queryRawUnsafe(historyInsertQuery);
+        await client.$queryRawUnsafe(
+          historyInsertQuery,
+          employee.id,
+          baseSalary,
+          salaryEffectiveDate,
+          user.id
+        );
       }
 
       return this.formatProfileResponse(employee);
@@ -227,7 +253,7 @@ export class EmployeesService {
   /**
    * Find employee by user ID
    */
-  async findByUserId(tenantSlug: string, userId: bigint) {
+  async findByUserId(tenantSlug: string, userId: string) {
     const client = this.prisma.getClient(tenantSlug);
 
     const employees = await client.$queryRaw`

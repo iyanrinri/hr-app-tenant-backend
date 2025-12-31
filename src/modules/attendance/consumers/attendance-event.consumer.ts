@@ -1,5 +1,5 @@
 import { Controller, Logger } from '@nestjs/common';
-import { EventPattern, Payload, Ctx, KafkaContext } from '@nestjs/microservices';
+import { EventPattern, Payload, Ctx, RmqContext } from '@nestjs/microservices';
 import { ATTENDANCE_EVENTS } from '../../../common/events/attendance.events';
 import { AttendanceGateway } from '../../../common/gateways/attendance.gateway';
 
@@ -10,38 +10,31 @@ export class AttendanceEventConsumer {
   constructor(private readonly attendanceGateway: AttendanceGateway) {}
 
   /**
-   * Consume dashboard update events from Kafka and emit to WebSocket
+   * Consume dashboard update events from RabbitMQ and emit to WebSocket
    */
   @EventPattern(ATTENDANCE_EVENTS.DASHBOARD_UPDATE)
   async handleDashboardUpdate(
     @Payload() data: any,
-    @Ctx() context: KafkaContext,
+    @Ctx() context: RmqContext,
   ) {
     try {
       const { tenantSlug } = data;
       
-      this.logger.log(`[Kafka Consumer] 📥 Dashboard update received for tenant: ${tenantSlug}`);
-      this.logger.log(`[Kafka Consumer] 📊 Data summary:`, {
+      this.logger.log(`[RabbitMQ Consumer] 📥 Dashboard update received for tenant: ${tenantSlug}`);
+      this.logger.log(`[RabbitMQ Consumer] 📊 Data summary:`, {
         presentCount: data.presentEmployees?.length || 0,
         absentCount: data.absentEmployees?.length || 0,
         lateCount: data.lateEmployees?.length || 0,
       });
       
-      // Log Kafka message details
-      const { offset } = context.getMessage();
-      const partition = context.getPartition();
-      const topic = context.getTopic();
-      
-      this.logger.log(
-        `[Kafka Consumer] 📨 Message details - Topic: ${topic}, Partition: ${partition}, Offset: ${offset}`,
-      );
-      
       // Emit to WebSocket clients
-      this.logger.log(`[Kafka Consumer] 🔄 Forwarding to WebSocket gateway...`);
+      this.logger.log(`[RabbitMQ Consumer] 🔄 Forwarding to WebSocket gateway...`);
       this.attendanceGateway.emitDashboardUpdate(tenantSlug, data);
-      this.logger.log(`[Kafka Consumer] ✅ Successfully forwarded to WebSocket`);
+      this.logger.log(`[RabbitMQ Consumer] ✅ Successfully forwarded to WebSocket`);
+      
+      // Note: NestJS RabbitMQ handles message acknowledgment automatically
     } catch (error) {
-      this.logger.error('[Kafka Consumer] ❌ Error processing dashboard update event:', error);
+      this.logger.error('[RabbitMQ Consumer] ❌ Error processing dashboard update event:', error);
     }
   }
 }

@@ -1,0 +1,476 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WebSocket Test - HR App</title>
+    <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+        
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+        
+        .header {
+            background: white;
+            padding: 30px;
+            border-radius: 12px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+            margin-bottom: 20px;
+        }
+        
+        .header h1 {
+            color: #333;
+            margin-bottom: 10px;
+        }
+        
+        .header p {
+            color: #666;
+        }
+        
+        .status-card {
+            background: white;
+            padding: 20px;
+            border-radius: 12px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+            margin-bottom: 20px;
+        }
+        
+        .status {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            font-size: 18px;
+            font-weight: 600;
+        }
+        
+        .status-dot {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            animation: pulse 2s infinite;
+        }
+        
+        .status-dot.connected {
+            background: #10b981;
+        }
+        
+        .status-dot.disconnected {
+            background: #ef4444;
+            animation: none;
+        }
+        
+        @keyframes pulse {
+            0%, 100% {
+                opacity: 1;
+            }
+            50% {
+                opacity: 0.5;
+            }
+        }
+        
+        .controls {
+            background: white;
+            padding: 20px;
+            border-radius: 12px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+            margin-bottom: 20px;
+        }
+        
+        .controls h3 {
+            margin-bottom: 15px;
+            color: #333;
+        }
+        
+        .form-group {
+            margin-bottom: 15px;
+        }
+        
+        .form-group label {
+            display: block;
+            margin-bottom: 5px;
+            color: #555;
+            font-weight: 500;
+        }
+        
+        .form-group input {
+            width: 100%;
+            padding: 10px;
+            border: 2px solid #e5e7eb;
+            border-radius: 6px;
+            font-size: 14px;
+        }
+        
+        .form-group input:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+        
+        .btn {
+            padding: 12px 24px;
+            border: none;
+            border-radius: 6px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s;
+            font-size: 14px;
+        }
+        
+        .btn-primary {
+            background: #667eea;
+            color: white;
+        }
+        
+        .btn-primary:hover {
+            background: #5568d3;
+        }
+        
+        .btn-primary:disabled {
+            background: #d1d5db;
+            cursor: not-allowed;
+        }
+        
+        .btn-secondary {
+            background: #10b981;
+            color: white;
+        }
+        
+        .btn-secondary:hover {
+            background: #059669;
+        }
+        
+        .btn-danger {
+            background: #ef4444;
+            color: white;
+        }
+        
+        .btn-danger:hover {
+            background: #dc2626;
+        }
+        
+        .btn-group {
+            display: flex;
+            gap: 10px;
+            margin-top: 15px;
+        }
+        
+        .events-container {
+            background: white;
+            padding: 20px;
+            border-radius: 12px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        }
+        
+        .events-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 15px;
+        }
+        
+        .events-header h3 {
+            color: #333;
+        }
+        
+        .event-item {
+            background: #f9fafb;
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 10px;
+            border-left: 4px solid #667eea;
+        }
+        
+        .event-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 8px;
+        }
+        
+        .event-type {
+            font-weight: 600;
+            color: #667eea;
+        }
+        
+        .event-time {
+            color: #9ca3af;
+            font-size: 12px;
+        }
+        
+        .event-data {
+            background: white;
+            padding: 10px;
+            border-radius: 4px;
+            font-family: 'Courier New', monospace;
+            font-size: 12px;
+            color: #374151;
+            overflow-x: auto;
+        }
+        
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+            margin-top: 15px;
+        }
+        
+        .stat-card {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 20px;
+            border-radius: 8px;
+            text-align: center;
+        }
+        
+        .stat-value {
+            font-size: 32px;
+            font-weight: bold;
+            margin-bottom: 5px;
+        }
+        
+        .stat-label {
+            font-size: 14px;
+            opacity: 0.9;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🚀 WebSocket Test Dashboard</h1>
+            <p>Real-time testing for HR App attendance notifications</p>
+        </div>
+
+        <div class="status-card">
+            <div class="status">
+                <span class="status-dot disconnected" id="statusDot"></span>
+                <span id="statusText">Disconnected</span>
+            </div>
+        </div>
+
+        <div class="controls">
+            <h3>⚙️ Connection Settings</h3>
+            <div class="form-group">
+                <label for="serverUrl">Server URL</label>
+                <input type="text" id="serverUrl" value="http://localhost:3000" placeholder="http://localhost:3000">
+            </div>
+            <div class="form-group">
+                <label for="tenantSlug">Tenant Slug</label>
+                <input type="text" id="tenantSlug" value="my_company" placeholder="my_company">
+            </div>
+            <div class="btn-group">
+                <button class="btn btn-primary" id="connectBtn" onclick="connect()">Connect</button>
+                <button class="btn btn-danger" id="disconnectBtn" onclick="disconnect()" disabled>Disconnect</button>
+            </div>
+        </div>
+
+        <div class="controls">
+            <h3>📊 Latest Dashboard Data</h3>
+            <div class="stats-grid">
+                <div class="stat-card">
+                    <div class="stat-value" id="presentCount">-</div>
+                    <div class="stat-label">Present</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value" id="absentCount">-</div>
+                    <div class="stat-label">Absent</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value" id="lateCount">-</div>
+                    <div class="stat-label">Late</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value" id="attendanceRate">-</div>
+                    <div class="stat-label">Attendance Rate</div>
+                </div>
+            </div>
+        </div>
+
+        <div class="events-container">
+            <div class="events-header">
+                <h3>📡 Received Events</h3>
+                <button class="btn btn-secondary" onclick="clearEvents()">Clear Events</button>
+            </div>
+            <div id="eventsContainer">
+                <p style="color: #9ca3af; text-align: center; padding: 20px;">No events received yet. Connect to start receiving events.</p>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let socket = null;
+        let eventCount = 0;
+
+        function updateStatus(connected) {
+            const statusDot = document.getElementById('statusDot');
+            const statusText = document.getElementById('statusText');
+            const connectBtn = document.getElementById('connectBtn');
+            const disconnectBtn = document.getElementById('disconnectBtn');
+
+            if (connected) {
+                statusDot.classList.remove('disconnected');
+                statusDot.classList.add('connected');
+                statusText.textContent = 'Connected';
+                statusText.style.color = '#10b981';
+                connectBtn.disabled = true;
+                disconnectBtn.disabled = false;
+            } else {
+                statusDot.classList.remove('connected');
+                statusDot.classList.add('disconnected');
+                statusText.textContent = 'Disconnected';
+                statusText.style.color = '#ef4444';
+                connectBtn.disabled = false;
+                disconnectBtn.disabled = true;
+            }
+        }
+
+        function connect() {
+            const serverUrl = document.getElementById('serverUrl').value;
+            const tenantSlug = document.getElementById('tenantSlug').value;
+
+            if (!serverUrl || !tenantSlug) {
+                alert('Please enter both server URL and tenant slug');
+                return;
+            }
+
+            console.log('Connecting to:', serverUrl + '/attendance');
+            console.log('Tenant:', tenantSlug);
+
+            // Connect to /attendance namespace
+            socket = io(serverUrl + '/attendance', {
+                transports: ['websocket', 'polling'],
+            });
+
+            socket.on('connect', () => {
+                console.log('✅ Connected to WebSocket server');
+                updateStatus(true);
+                addEvent('System', 'Connected to WebSocket server', { socketId: socket.id });
+
+                // Join tenant room
+                console.log('Joining tenant room:', tenantSlug);
+                socket.emit('join-tenant', { tenantSlug });
+            });
+
+            socket.on('disconnect', () => {
+                console.log('❌ Disconnected from WebSocket server');
+                updateStatus(false);
+                addEvent('System', 'Disconnected from WebSocket server', {});
+            });
+
+            socket.on('connect_error', (error) => {
+                console.error('Connection error:', error);
+                addEvent('Error', 'Connection error', { error: error.message });
+            });
+
+            // Listen for joined event
+            socket.on('joined', (data) => {
+                console.log('✅ Joined tenant room:', data);
+                addEvent('System', 'Joined tenant room successfully', data);
+            });
+
+            // Listen for attendance dashboard updates
+            socket.on('attendance.dashboard_update', (data) => {
+                console.log('📊 Dashboard update received:', data);
+                addEvent('Dashboard Update', 'Attendance dashboard data received', data);
+                updateDashboardStats(data);
+            });
+
+            // Listen for other attendance events
+            socket.on('attendance.clock_in', (data) => {
+                console.log('🟢 Clock in event:', data);
+                addEvent('Clock In', 'Employee clocked in', data);
+            });
+
+            socket.on('attendance.clock_out', (data) => {
+                console.log('🔴 Clock out event:', data);
+                addEvent('Clock Out', 'Employee clocked out', data);
+            });
+
+            socket.on('attendance.late_arrival', (data) => {
+                console.log('⏰ Late arrival event:', data);
+                addEvent('Late Arrival', 'Employee arrived late', data);
+            });
+        }
+
+        function disconnect() {
+            if (socket) {
+                socket.disconnect();
+                socket = null;
+                updateStatus(false);
+            }
+        }
+
+        function addEvent(type, message, data) {
+            eventCount++;
+            const container = document.getElementById('eventsContainer');
+            
+            // Remove "no events" message if it exists
+            if (eventCount === 1) {
+                container.innerHTML = '';
+            }
+
+            const eventItem = document.createElement('div');
+            eventItem.className = 'event-item';
+            
+            const now = new Date();
+            const timeString = now.toLocaleTimeString('en-US', { hour12: false });
+            
+            eventItem.innerHTML = `
+                <div class="event-header">
+                    <span class="event-type">${type}</span>
+                    <span class="event-time">${timeString}</span>
+                </div>
+                <div style="margin-bottom: 8px; color: #6b7280;">${message}</div>
+                <div class="event-data">${JSON.stringify(data, null, 2)}</div>
+            `;
+            
+            container.insertBefore(eventItem, container.firstChild);
+
+            // Keep only last 20 events
+            while (container.children.length > 20) {
+                container.removeChild(container.lastChild);
+            }
+        }
+
+        function updateDashboardStats(data) {
+            const summary = data.summary || {};
+            
+            document.getElementById('presentCount').textContent = summary.totalPresent || 0;
+            document.getElementById('absentCount').textContent = summary.totalAbsent || 0;
+            document.getElementById('lateCount').textContent = summary.totalLate || 0;
+            document.getElementById('attendanceRate').textContent = 
+                summary.attendanceRate ? summary.attendanceRate.toFixed(1) + '%' : '-';
+        }
+
+        function clearEvents() {
+            eventCount = 0;
+            const container = document.getElementById('eventsContainer');
+            container.innerHTML = '<p style="color: #9ca3af; text-align: center; padding: 20px;">No events received yet. Connect to start receiving events.</p>';
+            
+            // Reset stats
+            document.getElementById('presentCount').textContent = '-';
+            document.getElementById('absentCount').textContent = '-';
+            document.getElementById('lateCount').textContent = '-';
+            document.getElementById('attendanceRate').textContent = '-';
+        }
+
+        // Auto-connect on page load (optional)
+        // window.addEventListener('load', () => {
+        //     setTimeout(connect, 500);
+        // });
+    </script>
+</body>
+</html>

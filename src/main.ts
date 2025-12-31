@@ -5,6 +5,8 @@ import { MicroserviceOptions, Transport } from '@nestjs/microservices';
 import { AppModule } from './app.module';
 import { ValidationExceptionFilter } from './common/filters/validation-exception.filter';
 import { ConfigService } from '@nestjs/config';
+import { NestExpressApplication } from '@nestjs/platform-express';
+import { join } from 'path';
 
 // Global BigInt serialization for JSON
 (BigInt.prototype as any).toJSON = function() {
@@ -12,8 +14,11 @@ import { ConfigService } from '@nestjs/config';
 };
 
 async function bootstrap() {
-  // Create HTTP application
-  const app = await NestFactory.create(AppModule);
+  // Create HTTP application with Express
+  const app = await NestFactory.create<NestExpressApplication>(AppModule);
+  
+  // Serve static files from public directory
+  app.useStaticAssets(join(__dirname, '..', 'public'));
 
   const configService = app.get(ConfigService);
   const rabbitmqUrl = configService.get<string>('RABBITMQ_URL');
@@ -98,6 +103,7 @@ async function bootstrap() {
   console.log(`✓ HTTP server: http://localhost:${port}`);
   console.log(`✓ Swagger docs: http://localhost:${port}/api`);
   console.log(`✓ WebSocket: ws://localhost:${port}/attendance`);
+  console.log(`✓ WebSocket Test: http://localhost:${port}/test-websocket.html`);
   console.log('='.repeat(60));
   
   // Start RabbitMQ microservice in background (non-blocking)

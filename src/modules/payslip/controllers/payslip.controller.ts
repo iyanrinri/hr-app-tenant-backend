@@ -43,7 +43,7 @@ export class PayslipController {
     const payslip = await this.payslipService.generatePayslip(
       tenantSlug,
       dto,
-      BigInt(req.user.id),
+      req.user.id,
     );
     return this.transformPayslip(payslip);
   }
@@ -100,7 +100,7 @@ export class PayslipController {
     // Get employee ID from user
     const employee = await this.payslipRepository.getEmployeeIdByUserId(
       tenantSlug,
-      BigInt(req.user.id),
+      req.user.id,
     );
 
     if (!employee || !employee.id) {

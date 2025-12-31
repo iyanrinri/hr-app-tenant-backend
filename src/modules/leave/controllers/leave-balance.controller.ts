@@ -32,7 +32,7 @@ export class LeaveBalanceController {
     @Request() req: any,
     @Query('periodId') periodId?: string
   ): Promise<LeaveBalanceResponseDto[]> {
-    const userId = BigInt(req.user.id);
+    const userId = req.user.id;
     const employee = await this.employeeService.findByUserId(tenantSlug, userId);
     const parsedPeriodId = periodId ? parseInt(periodId) : undefined;
     return this.leaveBalanceService.getEmployeeBalances(tenantSlug, Number(employee.id), parsedPeriodId);
@@ -52,7 +52,7 @@ export class LeaveBalanceController {
     @Request() req: any,
     @Query('periodId') periodId?: string
   ): Promise<LeaveBalanceSummaryDto> {
-    const userId = BigInt(req.user.id);
+    const userId = req.user.id;
     const employee = await this.employeeService.findByUserId(tenantSlug, userId);
     const parsedPeriodId = periodId ? parseInt(periodId) : undefined;
     return this.leaveBalanceService.getEmployeeBalanceSummary(tenantSlug, Number(employee.id), parsedPeriodId);

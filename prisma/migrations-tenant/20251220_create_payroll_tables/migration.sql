@@ -16,7 +16,7 @@ CREATE TABLE IF NOT EXISTS "payrolls" (
     "processedAt" TIMESTAMP,
     "processedBy" BIGINT,
     notes TEXT,
-    "processorId" TEXT,
+    "processorId" BIGINT,
     "createdAt" TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     CONSTRAINT fk_payrolls_employee FOREIGN KEY ("employeeId") REFERENCES "employees"(id) ON DELETE CASCADE,

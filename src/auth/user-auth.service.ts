@@ -25,8 +25,8 @@ export class UserAuthService {
       const client = this.prisma.getClient(tenantSlug);
 
       // Get user from tenant database
-      const userQuery = `SELECT * FROM "users" WHERE email = '${email}' AND "deletedAt" IS NULL`;
-      const users = await client.$queryRawUnsafe(userQuery);
+      const userQuery = `SELECT * FROM "users" WHERE email = $1 AND "deletedAt" IS NULL`;
+      const users = await client.$queryRawUnsafe(userQuery, email);
 
       if (!users || users.length === 0) {
         throw new UnauthorizedException('Invalid email or password');
@@ -49,8 +49,7 @@ export class UserAuthService {
       
       if (this.employeesService) {
         try {
-          const userId = BigInt(user.id);
-          const employee = await this.employeesService.findByUserId(tenantSlug, userId);
+          const employee = await this.employeesService.findByUserId(tenantSlug, user.id);
           
           if (employee) {
             employeeId = employee.id.toString();
@@ -62,7 +61,7 @@ export class UserAuthService {
 
       // Generate JWT token
       const payload = {
-        id: Number(user.id), // Convert BigInt to number
+        id: user.id, // Keep as string (UUID)
         email: user.email,
         firstName: user.firstName,
         lastName: user.lastName,
@@ -78,7 +77,7 @@ export class UserAuthService {
       return {
         access_token,
         user: {
-          id: Number(user.id),
+          id: user.id,
           email: user.email,
           firstName: user.firstName,
           lastName: user.lastName,
@@ -105,12 +104,12 @@ export class UserAuthService {
   /**
    * Get user profile
    */
-  async getUserProfile(tenantSlug: string, userId: number) {
+  async getUserProfile(tenantSlug: string, userId: string) {
     try {
       const client = this.prisma.getClient(tenantSlug);
 
-      const userQuery = `SELECT * FROM "users" WHERE id = ${userId} AND "deletedAt" IS NULL`;
-      const users = await client.$queryRawUnsafe(userQuery);
+      const userQuery = `SELECT * FROM "users" WHERE id = $1 AND "deletedAt" IS NULL`;
+      const users = await client.$queryRawUnsafe(userQuery, userId);
 
       if (!users || users.length === 0) {
         throw new UnauthorizedException('User not found');
@@ -119,7 +118,7 @@ export class UserAuthService {
       const user = users[0];
 
       return {
-        id: Number(user.id),
+        id: user.id,
         email: user.email,
         firstName: user.firstName,
         lastName: user.lastName,
@@ -148,7 +147,7 @@ export class UserAuthService {
    */
   async updatePassword(
     tenantSlug: string,
-    userId: number,
+    userId: string,
     oldPassword: string,
     newPassword: string,
   ) {
@@ -156,8 +155,8 @@ export class UserAuthService {
       const client = this.prisma.getClient(tenantSlug);
 
       // Get user
-      const userQuery = `SELECT * FROM "users" WHERE id = ${userId} AND "deletedAt" IS NULL`;
-      const users = await client.$queryRawUnsafe(userQuery);
+      const userQuery = `SELECT * FROM "users" WHERE id = $1 AND "deletedAt" IS NULL`;
+      const users = await client.$queryRawUnsafe(userQuery, userId);
 
       if (!users || users.length === 0) {
         throw new UnauthorizedException('User not found');
@@ -177,12 +176,12 @@ export class UserAuthService {
       // Update password
       const updateQuery = `
         UPDATE "users" 
-        SET password = '${hashedPassword}', "updatedAt" = NOW()
-        WHERE id = ${userId}
+        SET password = $1, "updatedAt" = NOW()
+        WHERE id = $2
         RETURNING id, email, "firstName", "lastName", role
       `;
 
-      await client.$queryRawUnsafe(updateQuery);
+      await client.$queryRawUnsafe(updateQuery, hashedPassword, userId);
 
       return {
         message: 'Password updated successfully',

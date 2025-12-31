@@ -54,7 +54,7 @@ export class LeaveRequestController {
     @Body() createDto: CreateLeaveRequestDto,
     @Request() req: any
   ): Promise<LeaveRequestResponseDto> {
-    const userId = BigInt(req.user.id);
+    const userId = req.user.id;
     const employee = await this.employeeService.findByUserId(tenantSlug, userId);
     return this.leaveRequestService.submitRequest(tenantSlug, createDto, Number(employee.id));
   }
@@ -81,7 +81,7 @@ export class LeaveRequestController {
     @Query('page') page?: string,
     @Query('limit') limit?: string
   ): Promise<LeaveRequestHistoryDto[]> {
-    const userId = BigInt(req.user.id);
+    const userId = req.user.id;
     const employee = await this.employeeService.findByUserId(tenantSlug, userId);
     const pageNum = page ? parseInt(page) : 1;
     const limitNum = limit ? parseInt(limit) : 10;
@@ -107,7 +107,7 @@ export class LeaveRequestController {
     @Param('id', ParseIntPipe) id: number,
     @Request() req: any
   ): Promise<LeaveRequestResponseDto> {
-    const userId = BigInt(req.user.id);
+    const userId = req.user.id;
     const employee = await this.employeeService.findByUserId(tenantSlug, userId);
     return this.leaveRequestService.getRequestDetails(tenantSlug, id, Number(employee.id), req.user.role);
   }
@@ -127,7 +127,7 @@ export class LeaveRequestController {
     @Param('id', ParseIntPipe) id: number,
     @Request() req: any
   ): Promise<LeaveRequestResponseDto> {
-    const userId = BigInt(req.user.id);
+    const userId = req.user.id;
     const employee = await this.employeeService.findByUserId(tenantSlug, userId);
     return this.leaveRequestService.cancelRequest(tenantSlug, id, Number(employee.id));
   }
@@ -153,7 +153,7 @@ export class LeaveRequestController {
     @Query('page') page?: string,
     @Query('limit') limit?: string
   ): Promise<LeaveRequestHistoryDto[]> {
-    const userId = BigInt(req.user.id);
+    const userId = req.user.id;
     const employee = await this.employeeService.findByUserId(tenantSlug, userId);
     const pageNum = page ? parseInt(page) : 1;
     const limitNum = limit ? parseInt(limit) : 10;
@@ -186,7 +186,7 @@ export class LeaveRequestController {
     @Body() approveDto: ApproveLeaveRequestDto,
     @Request() req: any
   ): Promise<LeaveRequestResponseDto> {
-    const userId = BigInt(req.user.id);
+    const userId = req.user.id;
     const employee = await this.employeeService.findByUserId(tenantSlug, userId);
     return this.leaveRequestService.approveRequest(
       tenantSlug,
@@ -212,7 +212,7 @@ export class LeaveRequestController {
     @Body() rejectDto: RejectLeaveRequestDto,
     @Request() req: any
   ): Promise<LeaveRequestResponseDto> {
-    const userId = BigInt(req.user.id);
+    const userId = req.user.id;
     const employee = await this.employeeService.findByUserId(tenantSlug, userId);
     return this.leaveRequestService.rejectRequest(
       tenantSlug,

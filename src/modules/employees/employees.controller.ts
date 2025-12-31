@@ -317,7 +317,7 @@ export class EmployeesController {
   ) {
     const employee = await this.employeesService.findByUserId(
       tenantSlug,
-      BigInt(req.user.id),
+      req.user.id,
     );
     if (!employee) {
       throw new NotFoundException('Employee profile not found for this user');
@@ -351,7 +351,7 @@ export class EmployeesController {
   ) {
     const employee = await this.employeesService.findByUserId(
       tenantSlug,
-      BigInt(req.user.id),
+      req.user.id,
     );
     if (!employee) {
       throw new NotFoundException('Employee profile not found for this user');

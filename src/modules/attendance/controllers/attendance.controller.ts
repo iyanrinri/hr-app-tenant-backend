@@ -30,7 +30,7 @@ export class AttendanceController {
     @Ip() ip: string,
     @Headers('user-agent') userAgent: string,
   ) {
-    const userId = BigInt(req.user.id);
+    const userId = req.user.id;
     const employee = await this.employeeService.findByUserId(tenantSlug, userId);
     if (!employee) {
       throw new ForbiddenException('Employee record not found. Please contact administrator.');
@@ -50,7 +50,7 @@ export class AttendanceController {
     @Ip() ip: string,
     @Headers('user-agent') userAgent: string,
   ) {
-    const userId = BigInt(req.user.id);
+    const userId = req.user.id;
     const employee = await this.employeeService.findByUserId(tenantSlug, userId);
     if (!employee) {
       throw new ForbiddenException('Employee record not found. Please contact administrator.');
@@ -65,7 +65,7 @@ export class AttendanceController {
     @Param('tenant_slug') tenantSlug: string,
     @Request() req: any
   ) {
-    const userId = BigInt(req.user.id);
+    const userId = req.user.id;
     const employee = await this.employeeService.findByUserId(tenantSlug, userId);
     if (!employee) {
       throw new ForbiddenException('Employee record not found. Please contact administrator.');
@@ -134,7 +134,7 @@ export class AttendanceController {
     @Query('employeeId') employeeId?: string,
   ) {
     let targetEmployeeId: bigint;
-    const currentUserId = BigInt(req.user.id);
+    const currentUserId = req.user.id;
     const userRole = req.user.role;
 
     // If employeeId is provided, validate permissions
@@ -242,7 +242,7 @@ export class AttendanceController {
     @Request() req: any
   ) {
     const userRole = req.user.role;
-    const userId = BigInt(req.user.id);
+    const userId = req.user.id;
 
     // Only SUPER, ADMIN, and HR users can access dashboard
     if (userRole !== Role.SUPER && userRole !== Role.ADMIN && userRole !== Role.HR) {

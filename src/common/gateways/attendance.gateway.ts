@@ -54,7 +54,18 @@ export class AttendanceGateway implements OnGatewayConnection, OnGatewayDisconne
     @ConnectedSocket() client: Socket,
     @MessageBody() data: { tenantSlug: string },
   ) {
+    this.logger.log(`[WebSocket] Received join-tenant request from ${client.id}`);
+    this.logger.log(`[WebSocket] Data:`, data);
+    
     const { tenantSlug } = data;
+    
+    if (!tenantSlug) {
+      this.logger.error(`[WebSocket] No tenantSlug provided by client ${client.id}`);
+      return {
+        event: 'error',
+        data: { message: 'tenantSlug is required' },
+      };
+    }
     
     // Add client to tenant room
     client.join(tenantSlug);
@@ -65,7 +76,8 @@ export class AttendanceGateway implements OnGatewayConnection, OnGatewayDisconne
     }
     this.tenantRooms.get(tenantSlug)!.add(client.id);
     
-    this.logger.log(`Client ${client.id} joined tenant room: ${tenantSlug}`);
+    this.logger.log(`[WebSocket] ✅ Client ${client.id} joined tenant room: ${tenantSlug}`);
+    this.logger.log(`[WebSocket] 👥 Total clients in '${tenantSlug}': ${this.tenantRooms.get(tenantSlug)!.size}`);
     
     return {
       event: 'joined',

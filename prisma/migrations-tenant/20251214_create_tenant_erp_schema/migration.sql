@@ -1,13 +1,13 @@
 -- Create Role enum with all values
 DO $$ BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'Role') THEN
-    CREATE TYPE "Role" AS ENUM ('SUPER', 'ADMIN', 'HR', 'USER');
+    CREATE TYPE "Role" AS ENUM ('SUPER', 'ADMIN', 'HR', 'USER', 'EMPLOYEE');
   END IF;
 END $$;
 
 -- CreateTable for users (must exist first for FK)
 CREATE TABLE IF NOT EXISTS "users" (
-    "id" TEXT NOT NULL,
+    "id" BIGSERIAL NOT NULL,
     "email" TEXT NOT NULL,
     "firstName" TEXT NOT NULL,
     "lastName" TEXT NOT NULL,
@@ -27,7 +27,7 @@ CREATE UNIQUE INDEX IF NOT EXISTS "users_email_unique" ON "users"("email");
 -- CreateTable for employees (in master database)
 CREATE TABLE IF NOT EXISTS "employees" (
     "id" BIGSERIAL NOT NULL,
-    "userId" TEXT NOT NULL,
+    "userId" BIGINT NOT NULL,
     "firstName" TEXT NOT NULL,
     "lastName" TEXT NOT NULL,
     "position" TEXT NOT NULL,
